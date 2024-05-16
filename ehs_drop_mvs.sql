@@ -6,6 +6,10 @@ drop materialized view  dwh_ehs.ehs_claims_pending_mv;
 
 drop materialized view dwh_ehs.ehs_active_hospitals_dtls_mv;
 
+drop  materialized view dwh_ehs.MR_Online;
+
+drop  materialized view dwh_ehs.MR_Offline;
+
 drop materialized view dwh_ehs.ppd_perf_rep_mv ;
 
 drop materialized view dwh_ehs.ptd_perf_rep_mv;
@@ -19,6 +23,8 @@ DROP materialized view dwh_ehs.ftd_perf_rep_mv;
 drop materialized view dwh_ehs.ehs_preauth_pending_details_mv;
 
 drop materialized view  dwh_ehs.ehs_claims_pending_details_mv;
+
+drop materialized view dwh_ehs.ehs_arsi_common_emp_details_mv;
 
 drop materialized view dwh_ehs.ehs_followup_pending_mv;
 
@@ -37,6 +43,8 @@ drop materialized view dwh_ehs.ehs_unique_patient_details_mv;
 drop materialized view dwh_ehs.mis_followup_availed_case_details;
 
 drop materialized view dwh_ehs.ehs_followup_tracking_mv;
+
+drop materialized view dwh_ehs.ehs_followup_case_claim_details_mv;
 
 drop materialized view dwh_ehs.ehs_empanelled_hosp_list_mv;
 
