@@ -236,6 +236,60 @@ left join (select cmb_dtl_id , cmb_dtl_name  from dwh_ehs.asrim_combo_ehs ) cmb 
 
  
 
+create materialized view dwh_ehs.MR_Online as
+select distinct  SNO,topd.CLAIM_SEQ AS CLAIM_NUMBER,EMPLOYEE_TYPE,EMPLOYEE_DESIGNATION,PATIENT_NAME,PATIENT_GENDER,DEPARTMENT_NAME,
+	   NVL(eh.HOSP_NAME,topd.HOSP_ID) AS HOSP_NAME,HOSP_TYPE,hospital_district,PATIENT_TYPE,speciality_name,PROCEDURE_NAME,
+	   TREATMENT_TYPE,ADMITTED_DT,DISCHARGE_DATE,TOTAL_CLAIMED_AMOUNT,CEO_APPROVED_AMOUNT,nvl(claim_status_name_a,claim_status_name) as claim_status_name,CLAIM_SUBMITTED_DATE,
+	   case when claim_status = 'CD0011' then LST_UPD_DT else null end as CLAIM_APPROVED_DATE,dispached_date   ,CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt 
+FROM (SELECT PATIENT_SEQ,CLAIM_SEQ,USER_TYPE AS EMPLOYEE_TYPE,PATIENT_NAME,EMP_DESIGNATION AS EMPLOYEE_DESIGNATION,
+      PATIENT_GENDER,DEPT_NAME AS DEPARTMENT_NAME,PATIENT_TYPE,NVL(HOSPITAL_OTHER_NAME,OTHER_HOSP_NAME) AS HOSP_ID,
+      HOSP_TYPE,PROCEDURE_NAME,TREATMENT_TYPE,ADMITTED_DT,DISCHARGE_DATE,
+      TOTAL_CLAIMED_AMOUNT,CLAIM_STATUS,TOTAL_NETADM_AMNT as CEO_APPROVED_AMOUNT,LST_UPD_DT
+	  FROM dwh_ehs.trn_onlinecr_patientdtls_dm) topd
+LEFT JOIN (SELECT SNO,TRANSACTION_ID,CASE_SPECIALITY,SUBMITTED_DT as CLAIM_SUBMITTED_DATE
+		   FROM dwh_ehs.t_workflow_details_dm) twd ON topd.PATIENT_SEQ = twd.TRANSACTION_ID
+LEFT JOIN (SELECT HOSP_ID,HOSP_NAME,HOSP_DIST
+		   FROM dwh_ehs.ehfm_hospitals_dm) eh ON topd.HOSP_ID = eh.HOSP_ID
+left join (select dis_main_id, dis_main_name as speciality_name
+		   from dwh_ehs.ehfm_specialities_dm) sp on twd.CASE_SPECIALITY = sp.dis_main_id 
+left join (select loc_id,loc_name as hospital_district
+		   from dwh_ehs.ehfm_locations_dm) el on eh.HOSP_DIST = el.loc_id
+left join (select cmb_dtl_id,cmb_dtl_name as claim_status_name
+		   from dwh_ehs.ehfm_cmb_dtls_cd) ecd on topd.claim_status = ecd.cmb_dtl_id
+left join (select cmb_dtl_id,cmb_dtl_name as claim_status_name_a
+		   from dwh_ehs.asrim_combo_ehs
+		   where cmb_hdr_id = 'CH001') ecd3 on topd.claim_status = ecd3.cmb_dtl_id
+left join (select claim_seq,max(crt_dt) as dispached_date
+			from rawdata_ehs.scheme_workflow_audit 
+			where rec_status = 'C'
+			group by claim_seq) swa on topd.claim_seq = swa.claim_seq;
+		
+		
+	
+
+create materialized view dwh_ehs.MR_Offline as
+select trpd.claim_seq as claim_number,NVL(eh.HOSP_NAME,trpd.HOSP_ID) AS HOSP_NAME,hosp_type,hospital_district,
+	   patient_type,speciality_name,procedure_name,treatment_type,admitted_dt,discharge_date,total_claimed_amount,
+	   ceo_approved_amount,CLAIM_SUBMITTED_DATE,ceo_approved_date,CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt 
+from (select patient_seq,claim_seq,patient_type,NVL(other_hosp_name,hosp_name) as hosp_id,
+	   hosp_type,procedure_name,treatment_type,admitted_dt,discharge_date,total_claimed_amount,
+	   ctd_net_admissble_amount as ceo_approved_amount,lst_upd_dt as ceo_approved_date
+	   from dwh_ehs.trn_reimbursement_patientdtls_dm) trpd 
+left join (select SNO,TRANSACTION_ID,CASE_SPECIALITY,SUBMITTED_DT as CLAIM_SUBMITTED_DATE
+		   from dwh_ehs.t_workflow_details_dm) twd ON trpd.PATIENT_SEQ = twd.TRANSACTION_ID
+LEFT JOIN (SELECT HOSP_ID,HOSP_NAME,HOSP_DIST
+		   FROM dwh_ehs.ehfm_hospitals_dm) eh ON trpd.HOSP_ID = eh.HOSP_ID
+left join (select dis_main_id, dis_main_name as speciality_name
+		   from dwh_ehs.ehfm_specialities_dm) sp on twd.CASE_SPECIALITY = sp.dis_main_id 
+left join (select loc_id,loc_name as hospital_district
+		   from dwh_ehs.ehfm_locations_dm) el on eh.HOSP_DIST = el.loc_id
+left join (select claim_seq,max(crt_dt) as dispached_date
+			from rawdata_ehs.scheme_workflow_audit 
+			where rec_status = 'C'
+			group by claim_seq) swa on trpd.claim_seq = swa.claim_seq;
+		
+	
+
 
 
 create materialized view dwh_ehs.ppd_perf_rep_mv as
@@ -477,6 +531,32 @@ where PREAUTH_PENDING_BY is not null ;
 
 
 
+create materialized view dwh_ehs.ehs_arsi_common_emp_details_mv as
+select  
+eef.ehf_card_no as card_no,enroll_status_name, aarogyasri.aadhar_no, eef.enroll_id,eef.enroll_prnt_id as hosusehold_enroll_id ,emp_type_name,  case when NVL(eef.enroll_sno::text, eef.enroll_relation_code )=0 then 0 when NVL(eef.enroll_sno::text, eef.enroll_relation_code) is null then null  else 1 end as is_dependent, en.emp_code, eef.enroll_name as Name_of_the_card_holder,en.post_dist as emp_ddo_district_code,  emp_ddo_district,  
+emp_district,emp_state, dsg.dept_designation as employee_designation,hod_designation, en.prt_dept as employee_department, aarogyasri.uhid,  CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
+from 
+(select distinct emp_code,enroll_prnt_id, prt_dept,dept_hod,post_dist,emp_hdist,emp_type,designation,dept_designation,hod_designation,crt_dt,emp_hmand_munci from 
+			(select emp_code,enroll_prnt_id, prt_dept,dept_hod,post_dist,emp_hdist,emp_type,crt_dt,designation,dept_designation,hod_designation,prt_desg,emp_hmand_munci, rank() over(partition by emp_code order by crt_dt desc) as ranking from dwh_ehs.ehf_enrollment_dm )
+				where ranking=1 
+) en
+left join (select aadhar_id ,ehf_card_no, enroll_id , enroll_sno , blood_group, enroll_name ,enroll_gender ,enroll_status , enroll_prnt_id ,enroll_dob, enroll_relation as enroll_relation_code,crt_dt as enrolled_date from rawdata_ehs.ehf_enrollment_family  ) eef on eef.enroll_prnt_id = en.enroll_prnt_id
+inner join (select aadhar_no,uhid
+	  from rawdata.abha_dump_03122023_full adf
+	  union 
+	  select uid_no,uhid_value
+	  from rawdata.tmp_gsws_addl12) aarogyasri on aarogyasri.aadhar_no = eef.aadhar_id
+left join (select cmb_dtl_id , cmb_dtl_name as enroll_status_name from dwh_ehs.asrim_combo_ehs) ace on ace.cmb_dtl_id = eef.enroll_status
+LEFT JOIN(SELECT cmb_dtl_id,cmb_dtl_name as emp_type_name FROM dwh_ehs.ehfm_cmb_dtls_cd) cmb ON cmb.cmb_dtl_id = en.emp_type
+left join (select relation_id, relation_name from dwh_ehs.ehfm_relation_mst_dm) rl on rl.relation_id = eef.enroll_relation_code
+left join ( select distinct  dsgn_id, dept_designation,hod  from 
+			(select *, rank() over(partition by dsgn_id order by crt_dt desc) as ranking from dwh_ehs.ehf_designation_mst_dm )
+			where ranking=1
+) dsg on dsg.dsgn_id = en.dept_designation  and dsg.hod = en.dept_hod 
+left join (select loc_id,loc_name as emp_ddo_district, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) ddo_d on ddo_d.loc_id = en.post_dist
+left join (select loc_id,loc_name as emp_district, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) en_d on en_d.loc_id = en.emp_hdist
+left join (select loc_id,loc_name as emp_state, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) en_s on en_s.loc_id = en_d.loc_parnt_id
+left join (select loc_id,loc_name as emp_municipality, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) en_m on en_m.loc_id = en.emp_hmand_munci ;
 
 
 
@@ -974,6 +1054,54 @@ left join ( select distinct  dsgn_id, dept_designation,hod  from
 
 
 
+create  materialized view dwh_ehs.ehs_followup_case_claim_details_mv as
+select 
+f_case_id, is_first_followup, first_followup_status_code,first_followup_status,  case when first_followup_claim_paid_date is not null then 1 else 0 end as is_first_followup_claim_paid, case when first_followup_claim_paid_date is not null then first_followup_claim_paid_amt else 0 end as first_followup_claim_paid_amt,first_followup_claim_paid_date,
+is_second_followup,second_followup_status_code, second_followup_status,  case when second_followup_claim_paid_date is not null then 1 else 0 end as is_second_followup_claim_paid, case when second_followup_claim_paid_date is not null then second_followup_claim_paid_amt else 0 end as second_followup_claim_paid_amt,second_followup_claim_paid_date,
+is_third_followup,third_followup_status_code, third_followup_status, case when third_followup_claim_paid_date is not null then 1 else 0 end as is_third_followup_claim_paid, case when third_followup_claim_paid_date is not null then third_followup_claim_paid_amt else 0 end as third_followup_claim_paid_amt,third_followup_claim_paid_date,
+ is_fourth_followup,fourth_followup_status_code, fourth_followup_status, case when fourth_followup_claim_paid_date is not null then 1 else 0 end as is_fourth_followup_claim_paid, case when fourth_followup_claim_paid_date is not null then fourth_followup_claim_paid_amt else 0 end as fourth_followup_claim_paid_amt,fourth_followup_claim_paid_date
+,SUM( 
+	(case when first_followup_claim_paid_date is not null then first_followup_claim_paid_amt else 0 end)+(case when second_followup_claim_paid_date is not null then second_followup_claim_paid_amt else 0 end)
+	+(case when third_followup_claim_paid_date is not null then third_followup_claim_paid_amt else 0 end)+ (case when fourth_followup_claim_paid_date is not null then fourth_followup_claim_paid_amt else 0 end)
+) as total_followups_claim_paid_amount, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
+from
+(select fc.f_case_id,
+	   SUM(case when followup_number = 1 then 1 else 0 end) is_first_followup,
+	   MAX(case when followup_number = 1 then fc.followup_status end ) first_followup_status_code,
+	   MAX(case when followup_number = 1 then followup_status_name end ) first_followup_status,
+		SUM(case when followup_number = 1 then claim_paid  else 0 end) first_followup_claim_paid_amt,
+		MAX(case when followup_number = 1 and claim_paid_date is not null then claim_paid_date  when followup_number = 1 and followup_status='CD194' then fc.lst_upd_dt else null end) first_followup_claim_paid_date,
+	   SUM(case when followup_number = 2 then 1  else 0  end) is_second_followup,	
+	   MAX(case when followup_number = 2 then fc.followup_status end ) second_followup_status_code,
+	   MAX(case when followup_number = 2 then followup_status_name end ) second_followup_status,
+	    SUM(case when followup_number = 2 then claim_paid  else 0 end) second_followup_claim_paid_amt,
+	    MAX(case when followup_number = 2 and claim_paid_date is not null then claim_paid_date  when followup_number = 2 and followup_status='CD194' then fc.lst_upd_dt else null end) second_followup_claim_paid_date,
+	    SUM(case when followup_number = 3 then 1 else 0 end) is_third_followup,	 
+	    MAX(case when followup_number = 3 then fc.followup_status end ) third_followup_status_code,
+	   MAX(case when followup_number = 3 then followup_status_name end ) third_followup_status,
+	   	 SUM(case when followup_number = 3 then claim_paid 	else 0  end) third_followup_claim_paid_amt,
+	    MAX(case when followup_number = 3 and claim_paid_date is not null then claim_paid_date  when followup_number = 3 and followup_status='CD194' then fc.lst_upd_dt else null end) third_followup_claim_paid_date,
+	   SUM(case when followup_number = 4 then 1 else 0 end) is_fourth_followup,
+	   MAX(case when followup_number = 4 then fc.followup_status end ) fourth_followup_status_code,
+	   MAX(case when followup_number = 4 then followup_status_name end ) fourth_followup_status,
+	    SUM(case when followup_number = 4 then claim_paid else 0 end) fourth_followup_claim_paid_amt,
+	    MAX(case when followup_number = 4 and claim_paid_date is not null then claim_paid_date  when followup_number = 4 and followup_status='CD194' then fc.lst_upd_dt else null end) fourth_followup_claim_paid_date
+from
+(select  case_followup_id,split_part(case_followup_id,'/',2) as followup_number, case_id as f_case_id, claim_paid,followup_status, lst_upd_dt from dwh_ehs.ehf_case_followup_claim_dm ) fc 
+left join (		
+	select  case_followup_id , act_id , crt_dt as claim_paid_date
+		from
+	(select case_followup_id , act_id  , crt_dt , ROW_NUMBER() OVER(PARTITION by case_followup_id, act_id  order by crt_dt desc) as ranking
+	  from dwh_ehs.ehf_followup_audit_dm where act_id ='CD194'
+        )
+	where  ranking=1
+) fa on fa.case_followup_id = fc.case_followup_id
+left join (select cmb_dtl_id , cmb_dtl_name as followup_status_name from dwh_ehs.ehfm_cmb_dtls_cd) cmb2 on cmb2.cmb_dtl_id = fc.followup_status
+group by f_case_id
+)
+group by f_case_id,is_first_followup,first_followup_status_code,first_followup_status,is_first_followup_claim_paid,first_followup_claim_paid_amt,first_followup_claim_paid_date,is_second_followup,second_followup_status_code,second_followup_status,is_second_followup_claim_paid,second_followup_claim_paid_amt,second_followup_claim_paid_date,is_third_followup,third_followup_status_code,third_followup_status,is_third_followup_claim_paid,third_followup_claim_paid_amt,third_followup_claim_paid_date,is_fourth_followup,fourth_followup_status_code,fourth_followup_status,is_fourth_followup_claim_paid,fourth_followup_claim_paid_amt,fourth_followup_claim_paid_date
+;
+
 
 
 create materialized view dwh_ehs.ehs_unique_patient_details_mv as
@@ -1185,7 +1313,7 @@ left join (select distinct  hospinfo_id, hosp_md_ceo_name , hosp_md_email,hosp_m
 
 
 create materialized view dwh_ehs.MR_AUDIT_mv as 
-Select swa.claim_seq, case
+Select swa.claim_seq,current_group_id, case
 		when current_group_id in ('GP0008','GP0001') then 'a_REX'
 		when current_group_id in ('GP0003') then 'c_CPD'
 		when current_group_id in ('GP0002') then 'b_DYEO-TECHNICAL'
@@ -1193,7 +1321,7 @@ Select swa.claim_seq, case
 		when current_group_id in ('GP701') then 'e_EO-EHS'
 		when current_group_id in ('GP0004') then 'g_CEO-MR'
 		else null
-	end as Role_Name, user_name,case
+	end as Role_Name, user_name,case_status as case_status_id,case
 		when case_status in ('CD610', 'CD006', 'CD005', 'CD004', 'CD606', 'CD003', 'CD034', 'CD593', 'CD598', 'CD604', 'CD592', 'CD605', 'CD599',  'CD00020', 'CD595', 'CD592')then 'offline' else 'Online' end as mr_type,
 	   case
 		when case_status in ('CD006','CD0011') then 'b_Approved'
@@ -1223,8 +1351,56 @@ left join (select claim_seq, 'online' as mr_type
 		   from dwh_ehs.trn_onlinecr_patientdtls_dm 
 		   union 
 		   select claim_seq, 'offline' as mr_type
-		   from dwh_ehs.trn_reimbursement_patientdtls_dm) tpd on swa.claim_seq = tpd.claim_seq;
-		  
+		   from dwh_ehs.trn_reimbursement_patientdtls_dm) tpd on swa.claim_seq = tpd.claim_seq	   
+union all 		  
+select
+	inw.inward_id as claim_seq,eud.dsgn_id,
+	Case
+		when eud.dsgn_id in ('DG925','DG10057','DG9995','DG2020','DG150','DG225') then 'a_REX' else null end as Role_Name,
+	eud.user_name as user_name,
+	'inward' as case_status_ID,
+	'offline' as mr_type,
+	'inward' as case_status,
+	inw.crt_dt ,
+	'FY' || 
+       (CASE WHEN EXTRACT(MONTH FROM inw.crt_dt) <= 3 
+       THEN TO_CHAR(MOD(EXTRACT(YEAR FROM inw.crt_dt) - 1, 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM inw.crt_dt), 100), 'FM00')
+       ELSE TO_CHAR(MOD(EXTRACT(YEAR FROM inw.crt_dt), 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM inw.crt_dt) + 1, 100), 'FM00') END) AS crt_dt_f_YEAR
+from
+	trn_inward_dtls_dm inw
+left join (
+	select
+		user_id,
+		dsgn_id,
+		login_name,
+		(isnull(first_name,
+		'') + ' ' + isnull(middle_name,
+		'') + ' ' + isnull(last_name,
+		'')) as user_name
+	from
+		dwh_ehs.ehfm_users_dm) eud on
+	inw.crt_usr = eud.user_id
+left join (
+	select
+		user_id,
+		dsgn_id,
+		login_name,
+		(isnull(first_name,
+		'') + ' ' + isnull(middle_name,
+		'') + ' ' + isnull(last_name,
+		'')) as user_name
+	from
+		dwh_ehs.ehfm_users_dm) eud1 on
+	inw.lst_upd_usr = eud1.user_id
+left join ehfm_designation_dm edd on
+	edd.dsgn_id = eud.dsgn_id
+left join ehfm_designation_dm edd1 on
+	edd1.dsgn_id = eud1.dsgn_id
+left join ehfm_cmb_dtls_cd ecdc on
+	ecdc.cmb_dtl_id = inw.claim_status
+where eud.dsgn_id in ('DG925','DG10057','DG9995','DG2020','DG150','DG225' );
+
+
 	
 		  
 
