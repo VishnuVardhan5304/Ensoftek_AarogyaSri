@@ -124,7 +124,7 @@ LEFT JOIN (SELECT loc_id, loc_name as hospital_state, lgd_code, loc_parnt_id fro
 LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh.asri_combo_cd ) cmb1 ON cmb1.cmb_dtl_id = au.user_role
 left join (select distinct city_id , city_name from dwh.asri_major_city_dm )amcd on amcd.city_id  = hp_info.city_code
 left join (select distinct reg_num as ds_regnum,spclty_code from dwh.asri_doctor_splty_dm where is_activeyn='Y') sds on sds.ds_regnum = au.regno
-LEFT JOIN ( SELECT dis_main_id, dis_main_name as doctor_mapped_speciality_name  FROM dwh.asri_disease_main_cd ) dm_p ON dm_p.dis_main_id = sds.spclty_code
+LEFT JOIN ( SELECT dis_main_id, dis_main_name as doctor_mapped_speciality_name  FROM dwh.asri_disease_main_cd ) dm_p ON dm_p.dis_main_id = sds.spclty_code;
 
 
 
@@ -214,6 +214,42 @@ ahd.dist_id , ald.loc_name ,hospital_state, ahd.hosp_id , ahd.hosp_name, ahd.hos
 
 
 
+drop materialized view dwh.asri_pending_claims_dtls;
+
+create materialized view dwh.asri_pending_claims_dtls as 
+select *,
+case when pending_claims_bucket like 'Less than 15 days' then 1 when pending_claims_bucket like '15days to 60 days' then 2  when pending_claims_bucket like '61 days to 180 days' then 3
+	 when pending_claims_bucket like '180 days to 1 year' then 4  when pending_claims_bucket like 'More than 1 year' then 5 end as slno  , CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
+from 
+(SELECT ac.CASE_ID,CASE_HOSP_CODE, HOSP_NAME,hospital_district,hospital_state,  ACTUAL_CLM_SUB_DT , LST_UPD_DT as lastest_claim_pending_date,
+	   CASE WHEN CASE_STATUS in  ('CD90','CD0490') THEN 'CEX'
+		   	WHEN CASE_STATUS in ('CD118','CD384','CD15741') THEN 'CPD'
+	   		WHEN CASE_STATUS in ('CD1181','CD1182','CD1194','CD1195','CD1197') THEN 'CTD'	
+	   		when CASE_STATUS in ('CD1186','CD1193') then 'JEO'
+	   		WHEN CASE_STATUS in ('CD1185','CD1191','CD1192','CD119') THEN 'EO'
+	   		WHEN CASE_STATUS in ('CD354','CD1354','CDP1354') THEN 'CEO'
+	   		when CASE_STATUS in ('CD146', 'CD1252', 'CD145','CD1253') then 'Bank/CFMS'
+	   		when CASE_STATUS in ('CD121','CD1190') then 'Hospital'
+	   		ELSE NULL
+	   		END CLAIM_PENDING_BY, ROUND(DATEDIFF('hour', LST_UPD_DT, GETDATE())/24.0,0) as pending_claim_in_days,
+	   	case when pmj.uhid_value is not null then 1 when pmj.uhid_value is null then 0 else null end as pmjay_flag,
+	 case when ROUND(DATEDIFF('hour', LST_UPD_DT, GETDATE())/24.0,0) <15 then 'Less than 15 days' when ROUND(DATEDIFF('hour', LST_UPD_DT, GETDATE())/24.0,0) between 15 and 60 then '15days to 60 days'  when ROUND(DATEDIFF('hour', LST_UPD_DT, GETDATE())/24.0,0) between 61 and 180 then '61 days to 180 days'
+	 when ROUND(DATEDIFF('hour', LST_UPD_DT, GETDATE())/24.0,0) between 181 and 365 then '180 days to 1 year' when ROUND(DATEDIFF('hour', LST_UPD_DT, GETDATE())/24.0,0)>365 then 'More than 1 year' else null end as pending_claims_bucket
+FROM (SELECT case_id, ACTUAL_CLM_SUB_DT, case_status,case_hosp_code, case_patient_no, LST_UPD_DT FROM dwh.asri_case_ft  WHERE CASE_STATUS IN ('CD90','CD0490','CD118','CD384','CD15741','CD1181','CD1182','CD1194','CD1195','CD1197','CD1186','CD1193','CD1185','CD1191','CD1192','CD119','CD354','CD1354','CDP1354','CD146', 'CD1252', 'CD145','CD1253','CD121','CD1190')) ac 
+LEFT JOIN (SELECT HOSP_ID,hosp_sk,HOSP_NAME, dist_id FROM dwh.asri_hospitals_dm) ah ON ac.case_hosp_code = ah.hosp_id
+left join (select patient_id , uhidvalue  from dwh.asri_patient_dm) ap on ac.case_patient_no = ap.patient_id
+left join (SELECT uhid_value
+		   FROM rawdata.tmp_asri_data_shared_to_nha
+		   union
+		   SELECT uhid_value
+		   FROM rawdata.tmp_total_health_cards
+		   UNION
+		   SELECT uhid_value
+		   FROM rawdata.total_health_cards_delhi_ver_2) pmj on pmj.uhid_value = ap.uhidvalue
+LEFT JOIN (SELECT loc_id, loc_name as hospital_district, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) d_loc on d_loc.loc_id = ah.dist_id
+LEFT JOIN (SELECT loc_id, loc_name as hospital_state, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) s_loc ON s_loc.loc_id = d_loc.loc_parnt_id
+);
+
 
 
 
@@ -285,7 +321,42 @@ WHERE
    
    
 
+drop materialized view dwh.pending_claims;
 
+create materialized view dwh.pending_claims as 
+SELECT CASE_ID,DISEASE_CATEGORY_CODE,DISEASE_CATEGORY,CASE_HOSP_CODE,HOSP_NAME,PROC_TYPE,
+	   PREAUTH_INITIATE_DATE,PREAUTH_FORWARDED_TRUST_DATE,preauth_approval_date,
+	   ACTUAL_CLAIM_SUBMIT_TO_TRUST_DT,CLAIM_PENDING_BY,preauth_approved_amount,claim_submitted_amount,
+	   LAST_UPDATE_USER_ROLE,LAST_UPDATE_USER_NAME,LAST_UPDATE_DATE,waiting_claim_in_days,
+	   CASE WHEN (CLAIM_PENDING_BY = 'CEX' AND waiting_claim_in_days<1) THEN 'SLA Lapsing Tomorrow'
+	   		WHEN (CLAIM_PENDING_BY = 'CEX' AND (waiting_claim_in_days>=1 AND waiting_claim_in_days<2) ) THEN 'SLA Lapsing Today'
+	   		WHEN (CLAIM_PENDING_BY = 'CEX' AND waiting_claim_in_days>=2) THEN 'SLA Lapsed'
+	   		WHEN (CLAIM_PENDING_BY <> 'CEX' AND waiting_claim_in_days<1) THEN 'SLA Lapsing Today'
+	   		WHEN (CLAIM_PENDING_BY <> 'CEX' AND waiting_claim_in_days>=1) THEN 'SLA Lapsed'
+	   		ELSE ''
+	   		END sla_lapse_bucket	,CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt   		
+FROM 
+(SELECT ac.CASE_ID,CS_DIS_MAIN_CODE AS DISEASE_CATEGORY_CODE,DISEASE_CATEGORY,CASE_HOSP_CODE,
+		HOSP_NAME,PROC_TYPE,CS_PREAUTH_DT PREAUTH_INITIATE_DATE,CS_DT_PRE_AUTH PREAUTH_FORWARDED_TRUST_DATE,
+		cs_apprv_rej_dt as preauth_approval_date,
+		ACTUAL_CLM_SUB_DT AS ACTUAL_CLAIM_SUBMIT_TO_TRUST_DT,
+		pck_appv_amt as preauth_approved_amount,
+		cs_clm_bill_amt as claim_submitted_amount,
+	   CASE WHEN CASE_STATUS = 'CD90' THEN 'CEX'
+		   	WHEN CASE_STATUS in ('CD118','CD384','CD15741') THEN 'CPD'
+	   		WHEN CASE_STATUS in ('CD1181','CD1182','CD1194','CD1195','CD1197') THEN 'CTD'	
+	   		when CASE_STATUS in ('CD1186','CD1193') then 'JEO'
+	   		WHEN CASE_STATUS in ('CD1185','CD1191','CD1192') THEN 'EO'
+	   		WHEN CASE_STATUS in ('CD354','CD1354','CDP1354') THEN 'CEO'
+	   		ELSE ''
+	   		END CLAIM_PENDING_BY,
+	   CMB_DTL_NAME AS LAST_UPDATE_USER_ROLE,au.USER_NAME LAST_UPDATE_USER_NAME,LST_UPD_DT LAST_UPDATE_DATE,ROUND(DATEDIFF('hour', LST_UPD_DT, GETDATE())/24.0,1) waiting_claim_in_days
+FROM (SELECT * FROM dwh.asri_case_ft ac WHERE CASE_STATUS IN ('CD90','CD118','CD384','CD15741','CD1181','CD1182','CD1185','CD1186','CD1191','CD1192','CD1193','CD1194','CD1195','CD1197','CD354','CD1354','CDP1354')) ac 
+LEFT JOIN (SELECT CASE_ID,case_id_fk,ACT_ID,act_id_fk,ACT_BY,act_by_fk,CRT_DT AS CASE_LATEST_UPDATE_DATE FROM dwh.asri_audit_ft) aa ON ac.case_id_sk = aa.case_id_fk AND ac.case_status_fk = aa.act_id_fk
+LEFT JOIN (SELECT HOSP_ID,hosp_sk,HOSP_NAME FROM dwh.asri_hospitals_dm) ah ON ac.hosp_fk = ah.hosp_sk
+LEFT JOIN (SELECT USER_ID,user_sk,CONCAT(CONCAT(FIRST_NAME,' '),LAST_NAME) USER_NAME,USER_ROLE,user_role_fk from dwh.asri_users_dm) au ON aa.act_by_fk = au.user_sk
+LEFT JOIN (SELECT CMB_DTL_ID,cmb_dtl_id_sk,CMB_DTL_NAME FROM dwh.asri_combo_cd) acm ON au.user_role_fk = acm.cmb_dtl_id_sk
+LEFT JOIN (SELECT DIS_MAIN_ID,dis_sk,DIS_MAIN_NAME DISEASE_CATEGORY FROM dwh.asri_disease_main_cd) adm ON ac.cs_dis_main_code_fk = adm.dis_sk) f;
 
 
 
@@ -436,71 +507,6 @@ left join (select range_id , range_value  from dwh.hosp_feedback_values_mst_dm) 
 left join( select  user_id ,new_emp_code ,first_name, last_name, gender , cug,  active_yn, user_role  from dwh.asri_users_dm ) aud on aud.user_id = ahff.crt_usr;
 
 
-
-drop materialized view dwh.pending_claims;
-
-create materialized view dwh.pending_claims as 
-SELECT CASE_ID,DISEASE_CATEGORY_CODE,DISEASE_CATEGORY,CASE_HOSP_CODE,HOSP_NAME,PROC_TYPE,
-	   PREAUTH_INITIATE_DATE,PREAUTH_FORWARDED_TRUST_DATE,preauth_approval_date,
-	   ACTUAL_CLAIM_SUBMIT_TO_TRUST_DT,CLAIM_PENDING_BY,preauth_approved_amount,claim_submitted_amount,
-	   LAST_UPDATE_USER_ROLE,LAST_UPDATE_USER_NAME,LAST_UPDATE_DATE,waiting_claim_in_days,
-	   CASE WHEN (CLAIM_PENDING_BY = 'CEX' AND waiting_claim_in_days<1) THEN 'SLA Lapsing Tomorrow'
-	   		WHEN (CLAIM_PENDING_BY = 'CEX' AND (waiting_claim_in_days>=1 AND waiting_claim_in_days<2) ) THEN 'SLA Lapsing Today'
-	   		WHEN (CLAIM_PENDING_BY = 'CEX' AND waiting_claim_in_days>=2) THEN 'SLA Lapsed'
-	   		WHEN (CLAIM_PENDING_BY <> 'CEX' AND waiting_claim_in_days<1) THEN 'SLA Lapsing Today'
-	   		WHEN (CLAIM_PENDING_BY <> 'CEX' AND waiting_claim_in_days>=1) THEN 'SLA Lapsed'
-	   		ELSE ''
-	   		END sla_lapse_bucket	,CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt   		
-FROM 
-(SELECT ac.CASE_ID,CS_DIS_MAIN_CODE AS DISEASE_CATEGORY_CODE,DISEASE_CATEGORY,CASE_HOSP_CODE,
-		HOSP_NAME,PROC_TYPE,CS_PREAUTH_DT PREAUTH_INITIATE_DATE,CS_DT_PRE_AUTH PREAUTH_FORWARDED_TRUST_DATE,
-		cs_apprv_rej_dt as preauth_approval_date,
-		ACTUAL_CLM_SUB_DT AS ACTUAL_CLAIM_SUBMIT_TO_TRUST_DT,
-		pck_appv_amt as preauth_approved_amount,
-		cs_clm_bill_amt as claim_submitted_amount,
-	   CASE WHEN CASE_STATUS = 'CD90' THEN 'CEX'
-		   	WHEN CASE_STATUS in ('CD118','CD384','CD15741') THEN 'CPD'
-	   		WHEN CASE_STATUS in ('CD1181','CD1182','CD1194','CD1195','CD1197') THEN 'CTD'	
-	   		when CASE_STATUS in ('CD1186','CD1193') then 'JEO'
-	   		WHEN CASE_STATUS in ('CD1185','CD1191','CD1192') THEN 'EO'
-	   		WHEN CASE_STATUS in ('CD354','CD1354','CDP1354') THEN 'CEO'
-	   		ELSE ''
-	   		END CLAIM_PENDING_BY,
-	   CMB_DTL_NAME AS LAST_UPDATE_USER_ROLE,au.USER_NAME LAST_UPDATE_USER_NAME,LST_UPD_DT LAST_UPDATE_DATE,ROUND(DATEDIFF('hour', LST_UPD_DT, GETDATE())/24.0,1) waiting_claim_in_days
-FROM (SELECT * FROM dwh.asri_case_ft ac WHERE CASE_STATUS IN ('CD90','CD118','CD384','CD15741','CD1181','CD1182','CD1185','CD1186','CD1191','CD1192','CD1193','CD1194','CD1195','CD1197','CD354','CD1354','CDP1354')) ac 
-LEFT JOIN (SELECT CASE_ID,case_id_fk,ACT_ID,act_id_fk,ACT_BY,act_by_fk,CRT_DT AS CASE_LATEST_UPDATE_DATE FROM dwh.asri_audit_ft) aa ON ac.case_id_sk = aa.case_id_fk AND ac.case_status_fk = aa.act_id_fk
-LEFT JOIN (SELECT HOSP_ID,hosp_sk,HOSP_NAME FROM dwh.asri_hospitals_dm) ah ON ac.hosp_fk = ah.hosp_sk
-LEFT JOIN (SELECT USER_ID,user_sk,CONCAT(CONCAT(FIRST_NAME,' '),LAST_NAME) USER_NAME,USER_ROLE,user_role_fk from dwh.asri_users_dm) au ON aa.act_by_fk = au.user_sk
-LEFT JOIN (SELECT CMB_DTL_ID,cmb_dtl_id_sk,CMB_DTL_NAME FROM dwh.asri_combo_cd) acm ON au.user_role_fk = acm.cmb_dtl_id_sk
-LEFT JOIN (SELECT DIS_MAIN_ID,dis_sk,DIS_MAIN_NAME DISEASE_CATEGORY FROM dwh.asri_disease_main_cd) adm ON ac.cs_dis_main_code_fk = adm.dis_sk) f;
-
-
-
-drop materialized view dwh.pending_preauths;
-
-create materialized view dwh.pending_preauths as 
-SELECT CASE_ID,DISEASE_CATEGORY_CODE,DISEASE_CATEGORY,PROC_TYPE,CASE_HOSP_CODE,HOSP_NAME,CASE_REGN_DATE,PREAUTH_INITIATE_DATE,
-	   PREAUTH_FORWARDED_TRUST_DATE,PREAUTH_PENDING_BY,LAST_UPDATE_USER_ROLE,LAST_UPDATE_USER_NAME,LAST_UPDATE_DATE,waiting_preauth_in_hours,
-	   CASE WHEN waiting_preauth_in_hours<12 THEN '<12 hrs'
-	   		WHEN waiting_preauth_in_hours>=12 AND waiting_preauth_in_hours<=24 THEN '12 to 24 hrs'
-	   		WHEN waiting_preauth_in_hours>24 THEN '>24 hrs'
-	   		ELSE ''
-	   		END AS waiting_preauths_hours_bucket,waiting_preauth_in_hours_trust, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
-FROM 
-(SELECT ac.CASE_ID,CS_DIS_MAIN_CODE AS DISEASE_CATEGORY_CODE,DISEASE_CATEGORY,CASE_HOSP_CODE,HOSP_NAME,
-		PROC_TYPE,CASE_REGN_DATE,CS_PREAUTH_DT PREAUTH_INITIATE_DATE,CS_DT_PRE_AUTH PREAUTH_FORWARDED_TRUST_DATE,
-	   CASE WHEN (CASE_STATUS = 'CD76' AND PROC_TYPE = 'IP') THEN 'PEX'
-		   	WHEN ((CASE_STATUS = 'CD771' AND PROC_TYPE = 'IP') OR (CASE_STATUS = 'CD76' AND PROC_TYPE = 'ST')) THEN 'PPD'
-	   		WHEN (CASE_STATUS = 'CD76' AND PROC_TYPE = 'DC') THEN 'PTD'	
-	   		ELSE ''
-	   		END PREAUTH_PENDING_BY,
-	   CMB_DTL_NAME AS LAST_UPDATE_USER_ROLE,au.USER_NAME LAST_UPDATE_USER_NAME,LST_UPD_DT LAST_UPDATE_DATE, ROUND(DATEDIFF('hour', LST_UPD_DT, GETDATE()),1) waiting_preauth_in_hours,ROUND(DATEDIFF('hour', CS_DT_PRE_AUTH, GETDATE()),1) waiting_preauth_in_hours_trust   
-FROM (SELECT * FROM dwh.asri_case_ft WHERE CASE_STATUS IN ('CD771','CD76'))  ac
-LEFT JOIN (SELECT CASE_ID,case_id_fk,ACT_ID,act_id_fk,ACT_BY,act_by_fk,CRT_DT AS CASE_LATEST_UPDATE_DATE FROM dwh.asri_audit_ft) aa ON ac.case_id_sk = aa.case_id_fk AND ac.case_status_fk = aa.act_id_fk
-LEFT JOIN (SELECT HOSP_ID,hosp_sk,HOSP_NAME FROM dwh.asri_hospitals_dm) ah ON ac.hosp_fk = ah.hosp_sk
-LEFT JOIN (SELECT USER_ID,user_sk,CONCAT(CONCAT(FIRST_NAME,' '),LAST_NAME) USER_NAME,USER_ROLE,user_role_fk FROM dwh.asri_users_dm) au ON aa.act_by_fk = au.user_sk
-LEFT JOIN (SELECT CMB_DTL_ID,cmb_dtl_id_sk,CMB_DTL_NAME FROM dwh.asri_combo_cd) acm ON au.user_role_fk = acm.cmb_dtl_id_sk
-LEFT JOIN (SELECT DIS_MAIN_ID,dis_sk,DIS_MAIN_NAME DISEASE_CATEGORY FROM dwh.asri_disease_main_cd) adm ON ac.cs_dis_main_code_fk = adm.dis_sk) f;
 
 
 
@@ -1783,39 +1789,33 @@ where cnt>1
 drop  materialized view dwh.asri_followup_case_claim_details_mv;
 
 create materialized view dwh.asri_followup_case_claim_details_mv as
+select  
+case_id,case_status,current_case_status_name,speciality_code,speciality_name,procedure_code,procedure_name,hosp_id,hosp_name,hosp_status,hosp_type,govt_hosp_type,hospital_district,hospital_state,patient_id,patient_name,patient_gender,uhidvalue,patient_mandal,patient_district,patient_state
+,case_followup_id, followup_number, followup_status, is_followup_claim_paid, follwup_claim_paid_date, follwup_claim_paid_amt, ranking,
+CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
+from 
+(select  
+ac.case_id, ac.case_status, current_case_status_name, ac.cs_dis_main_code as speciality_code, speciality_name, ac.surgery_code as procedure_code, procedure_name, 
+hosp_id , hosp_name, hosp_status, hosp_type,govt_hosp_type, hospital_district, hospital_state,
+PATIENT_ID, patient_name, patient_gender, uhidvalue,  patient_mandal, patient_district, patient_state,
+fcd.case_followup_id, followup_number, followup_status,  case when payment_status='CD422' then 1 else 0 end as is_followup_claim_paid, case when payment_status='CD422' then fcd.lst_upd_dt else null end as  follwup_claim_paid_date, 
+case when payment_status='CD422' then claim_amount  else 0 end as  follwup_claim_paid_amt, ac.ranking
+from 
+(
 select 
-f_case_id, is_first_followup, first_followup_status_code,first_followup_status,  case when first_followup_claim_paid_date is not null then 1 else 0 end as is_first_followup_claim_paid, case when first_followup_claim_paid_date is not null then first_followup_claim_paid_amt else 0 end as first_followup_claim_paid_amt,first_followup_claim_paid_date,
-is_second_followup,second_followup_status_code, second_followup_status,  case when second_followup_claim_paid_date is not null then 1 else 0 end as is_second_followup_claim_paid, case when second_followup_claim_paid_date is not null then second_followup_claim_paid_amt else 0 end as second_followup_claim_paid_amt,second_followup_claim_paid_date,
-is_third_followup,third_followup_status_code, third_followup_status, case when third_followup_claim_paid_date is not null then 1 else 0 end as is_third_followup_claim_paid, case when third_followup_claim_paid_date is not null then third_followup_claim_paid_amt else 0 end as third_followup_claim_paid_amt,third_followup_claim_paid_date,
- is_fourth_followup,fourth_followup_status_code, fourth_followup_status, case when fourth_followup_claim_paid_date is not null then 1 else 0 end as is_fourth_followup_claim_paid, case when fourth_followup_claim_paid_date is not null then fourth_followup_claim_paid_amt else 0 end as fourth_followup_claim_paid_amt,fourth_followup_claim_paid_date
-,SUM( 
-	(case when first_followup_claim_paid_date is not null then first_followup_claim_paid_amt else 0 end)+(case when second_followup_claim_paid_date is not null then second_followup_claim_paid_amt else 0 end)
-	+(case when third_followup_claim_paid_date is not null then third_followup_claim_paid_amt else 0 end)+ (case when fourth_followup_claim_paid_date is not null then fourth_followup_claim_paid_amt else 0 end)
-) as total_followups_claim_paid_amount, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
+ac.case_id , case_hosp_code , case_status, current_case_status_name,case_patient_no, cs_dis_main_code, speciality_name, acs.surgery_code, procedure_name ,ROW_NUMBER() OVER(partition by ac.case_id/*,ac.cs_dis_main_code,acs.surgery_code*/  ) as ranking
 from 
-(select fcd.f_case_id,
-	   SUM(case when followup_number = 1 then 1 else 0 end) is_first_followup,
-	   MAX(case when followup_number = 1 then fcd.payment_status end ) first_followup_status_code,
-	   MAX(case when followup_number = 1 then payment_status_name end ) first_followup_status,
-		SUM(case when followup_number = 1 then claim_amount  else 0 end) first_followup_claim_paid_amt,
-		MAX(case when followup_number = 1 and claim_paid_date is not null then claim_paid_date  when followup_number = 1 and payment_status='CD422' then fcd.lst_upd_dt else null end) first_followup_claim_paid_date,
-	   SUM(case when followup_number = 2 then 1  else 0  end) is_second_followup,	
-	   MAX(case when followup_number = 2 then fcd.payment_status end ) second_followup_status_code,
-	   MAX(case when followup_number = 2 then payment_status_name end ) second_followup_status,
-	    SUM(case when followup_number = 2 then claim_amount  else 0 end) second_followup_claim_paid_amt,
-	    MAX(case when followup_number = 2 and claim_paid_date is not null then claim_paid_date  when followup_number = 2 and payment_status='CD422' then fcd.lst_upd_dt else null end) second_followup_claim_paid_date,
-	    SUM(case when followup_number = 3 then 1 else 0 end) is_third_followup,	 
-	    MAX(case when followup_number = 3 then fcd.payment_status end ) third_followup_status_code,
-	   MAX(case when followup_number = 3 then payment_status_name end ) third_followup_status,
-	   	 SUM(case when followup_number = 3 then claim_amount 	else 0  end) third_followup_claim_paid_amt,
-	    MAX(case when followup_number = 3 and claim_paid_date is not null then claim_paid_date  when followup_number = 3 and payment_status='CD422' then fcd.lst_upd_dt else null end) third_followup_claim_paid_date,
-	   SUM(case when followup_number = 4 then 1 else 0 end) is_fourth_followup,
-	   MAX(case when followup_number = 4 then fcd.payment_status end ) fourth_followup_status_code,
-	   MAX(case when followup_number = 4 then payment_status_name end ) fourth_followup_status,
-	    SUM(case when followup_number = 4 then claim_amount else 0 end) fourth_followup_claim_paid_amt,
-	    MAX(case when followup_number = 4 and claim_paid_date is not null then claim_paid_date  when followup_number = 4 and payment_status='CD422' then fcd.lst_upd_dt else null end) fourth_followup_claim_paid_date
-from 
-(select case_followup_id , split_part(case_followup_id,'/',2) as followup_number,case_id as f_case_id , payment_status , claim_amount , lst_upd_dt  from dwh.asri_case_followup_claim_dm ) fcd
+(select case_id , case_hosp_code , case_status,  case_patient_no , cs_dis_main_code  from dwh.asri_case_ft ) ac
+left join (select cmb_dtl_id, cmb_dtl_name as current_case_status_name from dwh.asri_combo_cd ) cmb2 on cmb2.cmb_dtl_id = ac.case_status
+left join (select  dis_main_id , dis_main_name as speciality_name from dwh.asri_disease_main_cd ) dm on dm.dis_main_id = ac.cs_dis_main_code
+left join (select case_id, surgery_code from dwh.asri_case_surgery_dm) acs on acs.case_id = ac.case_id
+left join ( select  surgery_id,surgery_desc as procedure_name  , postops_amt,is_perdm,surgery_amt,rest_days
+from (select surgery_id,surgery_desc , postops_amt,is_perdm,surgery_amt,rest_days,rank() OVER(partition by surgery_id order by surgery_sk desc) as ranking
+	  from dwh.asri_surgery_dm)
+where ranking = 1
+) asd on asd.surgery_id = acs.surgery_code
+)ac
+inner join (select case_followup_id , split_part(case_followup_id,'/',2) as followup_number,case_id as f_case_id , payment_status , claim_amount , lst_upd_dt  from dwh.asri_case_followup_claim_dm /*where case_id='AP5275756'*/) fcd on fcd.f_case_id = ac.case_id
 left join (
 	select  case_followup_id , act_id , crt_dt as claim_paid_date
 		from
@@ -1824,11 +1824,22 @@ left join (
         )
 	where  ranking=1
 ) fad on fad.case_followup_id = fcd.case_followup_id
-left join (select cmb_dtl_id, cmb_dtl_name as payment_status_name from dwh.asri_combo_cd ) cmb on cmb.cmb_dtl_id = fcd.payment_status
-group by f_case_id
-)
-group by f_case_id,is_first_followup,first_followup_status_code,first_followup_status,is_first_followup_claim_paid,first_followup_claim_paid_amt,first_followup_claim_paid_date,is_second_followup,second_followup_status_code,second_followup_status,is_second_followup_claim_paid,second_followup_claim_paid_amt,second_followup_claim_paid_date,is_third_followup,third_followup_status_code,third_followup_status,is_third_followup_claim_paid,third_followup_claim_paid_amt,third_followup_claim_paid_date,is_fourth_followup,fourth_followup_status_code,fourth_followup_status,is_fourth_followup_claim_paid,fourth_followup_claim_paid_amt,fourth_followup_claim_paid_date
-;
+left join (select cmb_dtl_id, cmb_dtl_name as followup_status from dwh.asri_combo_cd ) cmb on cmb.cmb_dtl_id = fcd.payment_status
+left join (select hosp_id , hosp_name ,case when isactive_ap='Y' then 'Active'  when isactive_ap='N' then 'In-Active'  when isactive_ap='D' then 'Delist'  when isactive_ap='E' then 'De-Empanelment' when isactive_ap='R' then 'Re-Empanelment' when isactive_ap='S' then 'Suspended' end as hosp_status,
+	  		case when hosp_type='C' then 'Corporate' when hosp_type='G' then 'Government' end as hosp_type,govt_hosp_type, dist_id  from dwh.asri_hospitals_dm 
+		 ) ah on ac.case_hosp_code = ah.hosp_id
+LEFT JOIN (SELECT loc_id, loc_name as hospital_district, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) d_loc on d_loc.loc_id = ah.dist_id
+LEFT JOIN (SELECT loc_id, loc_name as hospital_state, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) s_loc ON s_loc.loc_id = d_loc.loc_parnt_id
+LEFT JOIN (SELECT PATIENT_ID,NVL(first_name,'')||' '||NVL(middle_name,'')||' '||NVL(last_name,'') as patient_name, age, case when gender='M' then 'Male' when gender='F' then 'Female' end  AS patient_gender,
+			DISTRICT_CODE,MANDAL_CODE,RATION_CARD_NO, uhidvalue  FROM dwh.asri_patient_dm
+   		) ap on ap.patient_id = ac.case_patient_no	
+LEFT JOIN ( SELECT loc_id, loc_name AS patient_mandal FROM dwh.asri_locations_dm) lp_m ON lp_m.loc_id = ap.mandal_code
+LEFT JOIN (SELECT loc_id, loc_name as patient_district, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) pd_loc on pd_loc.loc_id = ap.district_code
+LEFT JOIN (SELECT loc_id, loc_name as patient_state, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) ps_loc ON ps_loc.loc_id = pd_loc.loc_parnt_id
+);
+
+
+
 
 
 
