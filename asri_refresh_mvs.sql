@@ -1,4 +1,4 @@
-drop materialized view dwh.active_empnl_hosp_specialities_mv;
+drop materialized view  IF EXISTS  dwh.active_empnl_hosp_specialities_mv;
 
 create materialized view dwh.active_empnl_hosp_specialities_mv as			 
 select 
@@ -24,12 +24,12 @@ hosp_id,hosp_empnl_ref_num, hosp_contact_no, hosp_name, hosp_disp_code,hosp_emai
 case when isactive_ap='Y' then 'Active'  when isactive_ap='N' then 'In-Active'  when isactive_ap='D' then 'Delist'  when isactive_ap='E' then 'De-Empanelment' when isactive_ap='R' then 'Re-Empanelment' when isactive_ap='S' then 'Suspended' end as hosp_status
 FROM dwh.asri_hospitals_dm ) ah 
 LEFT JOIN(SELECT hospinfo_id,status,hosp_bed_strength,pannumber, panholdername, mandal, constituency_code,district_code, city_code,hosp_md_ceo_name, hosp_md_mob_ph  FROM  dwh.asri_empnl_hospinfo_dm) hp_info ON hp_info.hospinfo_id=ah.hosp_empnl_ref_num
-LEFT JOIN (select distinct hosp_id, speciality_id from
+LEFT JOIN (select distinct hosp_id, TRIM(speciality_id) as speciality_id from
 		(SELECT  hosp_id, speciality_id, crt_dt, ROW_NUMBER() OVER(partition by hosp_id, speciality_id, crt_dt ) as rwn   FROM dwh.asri_hosp_speciality_dm where renewal=9 and is_active_flg='Y')
-		where rwn=1
+		where rwn=1 
 )hp_sp ON hp_sp.hosp_id = ah.hosp_id
 left join (
-select  hosp_id, LISTAGG(distinct speciality_id, ',') as all_specialities_mapped from
+select  hosp_id, LISTAGG(distinct TRIM(speciality_id), ',') as all_specialities_mapped from
 		(SELECT  hosp_id, speciality_id, crt_dt, ROW_NUMBER() OVER(partition by hosp_id, speciality_id, crt_dt ) as rwn   FROM dwh.asri_hosp_speciality_dm where renewal=9 and is_active_flg='Y')
 		where rwn=1 
 		group by hosp_id
@@ -37,18 +37,18 @@ select  hosp_id, LISTAGG(distinct speciality_id, ',') as all_specialities_mapped
 LEFT JOIN (SELECT loc_id, loc_name,lgd_code from dwh.asri_locations_dm ) md_loc ON md_loc.loc_id = hp_info.mandal
 LEFT JOIN (SELECT loc_id, loc_name, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) d_loc ON d_loc.loc_id = ah.dist_id
 LEFT JOIN (SELECT loc_id, loc_name as hospital_state, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) s_loc ON s_loc.loc_id = d_loc.loc_parnt_id
-left join (select city_id , city_name from asri_major_city_dm )amcd on amcd.city_id  = hp_info.city_code
-LEFT JOIN (SELECT dis_main_id, dis_main_name FROM dwh.asri_disease_main_cd) adm ON hp_sp.speciality_id = adm.DIS_MAIN_ID
+left join (select city_id , city_name from dwh.asri_major_city_dm )amcd on amcd.city_id  = hp_info.city_code
+INNER JOIN (SELECT dis_main_id, dis_main_name FROM dwh.asri_disease_main_cd where dis_main_id not in ('1','2','3','4','5','6','7','8','9','10','11','12','13') ) adm ON hp_sp.speciality_id = adm.DIS_MAIN_ID
 )
 );
 
 
-drop materialized view  dwh.asri_empnl_nabh_details_mv;
+drop materialized view  IF EXISTS  dwh.asri_empnl_nabh_details_mv;
 
 create materialized view  dwh.asri_empnl_nabh_details_mv as 
 select 
 ah.hosp_id, hosp_name, HSIN_Number, hosp_status,  hospital_district, hospital_state, nabh_no, nabh_request_number,  
-case when active_yn='Y' then 'Active' when active_yn='N' then 'In-Active' else null end as nabh_status, nabh_valid_from, nabh_valid_to
+case when active_yn='Y' then 'Active' when active_yn='N' then 'In-Active' else null end as nabh_status, nabh_valid_from, nabh_valid_to , CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 from 
 (select hosp_id , hosp_name ,  hosp_empnl_ref_num as HSIN_Number,dist_id,
 case when isactive_ap='Y' then 'Active'  when isactive_ap='N' then 'In-Active'  when isactive_ap='D' then 'Delist'  when isactive_ap='E' then 'De-Empanelment' when isactive_ap='R' then 'Re-Empanelment' when isactive_ap='S' then 'Suspended' end as hosp_status
@@ -63,7 +63,7 @@ LEFT JOIN (SELECT loc_id, loc_name as hospital_state, lgd_code, loc_parnt_id fro
 
 
 
-drop materialized view dwh.asri_empnl_duty_doctors_hosp_dtls_mv;
+drop materialized view  IF EXISTS   dwh.asri_empnl_duty_doctors_hosp_dtls_mv;
 
 create materialized view dwh.asri_empnl_duty_doctors_hosp_dtls_mv as
 select   
@@ -91,11 +91,11 @@ left join (select distinct city_id , city_name from dwh.asri_major_city_dm )amcd
 LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh.asri_combo_cd ) cmb ON cmb.cmb_dtl_id = hp_info.status
 LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh.asri_combo_cd ) cmb1 ON cmb1.cmb_dtl_id = ad.apprv_status
 left join (select distinct reg_num as ds_regnum, spclty_code from dwh.asri_doctor_splty_dm where is_activeyn='Y') sds on sds.ds_regnum = ad.reg_num
-LEFT JOIN ( SELECT dis_main_id, dis_main_name as doctor_mapped_speciality_name  FROM dwh.asri_disease_main_cd ) dm_p ON dm_p.dis_main_id = sds.spclty_code;
+LEFT JOIN ( SELECT dis_main_id, dis_main_name as doctor_mapped_speciality_name  FROM dwh.asri_disease_main_cd where dis_main_id not in ('1','2','3','4','5','6','7','8','9','10','11','12','13')  ) dm_p ON dm_p.dis_main_id = sds.spclty_code;
 
 
 
-drop materialized view dwh.empnl_hosp_medco_dtls_mv;
+drop materialized view  IF EXISTS   dwh.empnl_hosp_medco_dtls_mv;
 
 
 create materialized view dwh.empnl_hosp_medco_dtls_mv as 
@@ -124,12 +124,12 @@ LEFT JOIN (SELECT loc_id, loc_name as hospital_state, lgd_code, loc_parnt_id fro
 LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh.asri_combo_cd ) cmb1 ON cmb1.cmb_dtl_id = au.user_role
 left join (select distinct city_id , city_name from dwh.asri_major_city_dm )amcd on amcd.city_id  = hp_info.city_code
 left join (select distinct reg_num as ds_regnum,spclty_code from dwh.asri_doctor_splty_dm where is_activeyn='Y') sds on sds.ds_regnum = au.regno
-LEFT JOIN ( SELECT dis_main_id, dis_main_name as doctor_mapped_speciality_name  FROM dwh.asri_disease_main_cd ) dm_p ON dm_p.dis_main_id = sds.spclty_code;
+LEFT JOIN ( SELECT dis_main_id, dis_main_name as doctor_mapped_speciality_name  FROM dwh.asri_disease_main_cd where dis_main_id not in ('1','2','3','4','5','6','7','8','9','10','11','12','13')  ) dm_p ON dm_p.dis_main_id = sds.spclty_code;
 
 
 
 
-drop materialized view dwh.asri_empnl_paramedics_doctors_hosp_dtls_mv;
+drop materialized view  IF EXISTS   dwh.asri_empnl_paramedics_doctors_hosp_dtls_mv;
 
 create materialized view dwh.asri_empnl_paramedics_doctors_hosp_dtls_mv as
 select  
@@ -156,10 +156,10 @@ LEFT JOIN (SELECT loc_id, loc_name as hospital_state, lgd_code, loc_parnt_id fro
 LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh.asri_combo_cd ) cmb1 ON cmb1.cmb_dtl_id = pd.apprv_status
 left join (select city_id , city_name from dwh.asri_major_city_dm )amcd on amcd.city_id  = hp_info.city_code
 left join (select distinct reg_num as ds_regnum, spclty_code from dwh.asri_doctor_splty_dm where is_activeyn='Y') sds on sds.ds_regnum = pd.reg_num
-LEFT JOIN ( SELECT dis_main_id, dis_main_name as doctor_mapped_speciality_name  FROM dwh.asri_disease_main_cd ) dm_p ON dm_p.dis_main_id = sds.spclty_code;
+LEFT JOIN ( SELECT dis_main_id, dis_main_name as doctor_mapped_speciality_name  FROM dwh.asri_disease_main_cd where dis_main_id not in ('1','2','3','4','5','6','7','8','9','10','11','12','13') ) dm_p ON dm_p.dis_main_id = sds.spclty_code;
 
 
-drop materialized view dwh.asri_empnl_specialist_type_hosp_dtls_mv;
+drop materialized view  IF EXISTS   dwh.asri_empnl_specialist_type_hosp_dtls_mv;
 
 create materialized view dwh.asri_empnl_specialist_type_hosp_dtls_mv as
 select  
@@ -189,10 +189,10 @@ LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh.asri_combo_cd ) cmb ON cmb.c
 LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh.asri_combo_cd ) cmb1 ON cmb1.cmb_dtl_id = asp.apprv_status
 left join (select distinct city_id , city_name from dwh.asri_major_city_dm )amcd on amcd.city_id  = hp_info.city_code
 left join (select distinct reg_num as ds_regnum, spclty_code from dwh.asri_doctor_splty_dm where is_activeyn='Y') sds on sds.ds_regnum = asp.reg_num
-LEFT JOIN ( SELECT dis_main_id, dis_main_name as doctor_mapped_speciality_name  FROM dwh.asri_disease_main_cd ) dm_p ON dm_p.dis_main_id = sds.spclty_code;
+LEFT JOIN ( SELECT dis_main_id, dis_main_name as doctor_mapped_speciality_name  FROM dwh.asri_disease_main_cd where dis_main_id not in ('1','2','3','4','5','6','7','8','9','10','11','12','13')  ) dm_p ON dm_p.dis_main_id = sds.spclty_code;
 
 
- drop materialized view dwh.asri_active_mithra_details_mv;
+ drop materialized view  IF EXISTS   dwh.asri_active_mithra_details_mv;
 
 create materialized view dwh.asri_active_mithra_details_mv as
 select aud.user_id, aud.new_emp_code , (NVL(first_name , '') || ' ' || NVL(last_name, ''))AS M_NAME ,case when aud.gender='M' then 'Male' when aud.gender='F' then 'Female' end as gender  ,  aud.active_yn , aud.cug ,
@@ -205,16 +205,16 @@ case when ahd.hosp_type='C' then 'Corporate' when ahd.hosp_type='G' then 'Govern
 from 
 (select user_id ,new_emp_code ,first_name, last_name, gender , cug,  active_yn, user_role  
        from dwh.asri_users_dm where active_yn ='Y' and user_role IN ('CD10','CD11')) aud 
-inner join (select user_id , hosp_id , eff_start_dt, eff_end_dt from asri_mit_users_dm where eff_end_dt is null ) amud on amud.user_id = aud.user_id
-left join (select hosp_id , hosp_name ,  hosp_type ,  govt_hosp_type , dist_id  from asri_hospitals_dm  ) ahd on ahd.hosp_id  = amud.hosp_id 
-left join (select loc_id , loc_name, loc_parnt_id  from asri_locations_dm )ald on ald.loc_id = ahd.dist_id 
+inner join (select user_id , hosp_id , eff_start_dt, eff_end_dt from dwh.asri_mit_users_dm where eff_end_dt is null ) amud on amud.user_id = aud.user_id
+left join (select hosp_id , hosp_name ,  hosp_type ,  govt_hosp_type , dist_id  from dwh.asri_hospitals_dm  ) ahd on ahd.hosp_id  = amud.hosp_id 
+left join (select loc_id , loc_name, loc_parnt_id  from dwh.asri_locations_dm )ald on ald.loc_id = ahd.dist_id 
 LEFT JOIN (SELECT loc_id, loc_name as hospital_state, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) s_loc ON s_loc.loc_id = ald.loc_parnt_id
 group by aud.user_id, aud.new_emp_code , (NVL(aud.first_name , '') || ' ' || NVL(aud.last_name, '')) , aud.gender , aud.active_yn , aud.cug ,
 ahd.dist_id , ald.loc_name ,hospital_state, ahd.hosp_id , ahd.hosp_name, ahd.hosp_type , ahd.govt_hosp_type , amud.eff_end_dt ;
 
 
 
-drop materialized view dwh.asri_pending_claims_dtls;
+drop materialized view  IF EXISTS  dwh.asri_pending_claims_dtls;
 
 create materialized view dwh.asri_pending_claims_dtls as 
 select *,
@@ -253,7 +253,7 @@ LEFT JOIN (SELECT loc_id, loc_name as hospital_state, lgd_code, loc_parnt_id fro
 
 
 
-drop materialized view dwh.asri_igrt_mv;
+drop materialized view  IF EXISTS  dwh.asri_igrt_mv;
 
 create materialized view dwh.asri_igrt_mv as 
 SELECT
@@ -321,7 +321,7 @@ WHERE
    
    
 
-drop materialized view dwh.pending_claims;
+drop materialized view  IF EXISTS  dwh.pending_claims;
 
 create materialized view dwh.pending_claims as 
 SELECT CASE_ID,DISEASE_CATEGORY_CODE,DISEASE_CATEGORY,CASE_HOSP_CODE,HOSP_NAME,PROC_TYPE,
@@ -365,7 +365,7 @@ LEFT JOIN (SELECT DIS_MAIN_ID,dis_sk,DIS_MAIN_NAME DISEASE_CATEGORY FROM dwh.asr
 
 
 
-drop materialized view dwh.PMJAY_cases;
+drop materialized view  IF EXISTS  dwh.PMJAY_cases;
 
 create materialized view dwh.PMJAY_cases as
 select ac.case_id, speciality_code,speciality_name,surgery_code,procedure_name, case when speciality_code = 'M14' then 'Y' else 'N' end as covid_flag,
@@ -413,22 +413,21 @@ left join (select patient_id, ration_card_no, age as patient_age,district_code,m
           ELSE RATION_CARD_NO
           end AS FAMILY_CARD_NO
 		  from dwh.asri_patient_dm) ap on ac.case_patient_no = ap.patient_id
-inner join (select distinct householdcardno
-			from dwh.asri_family_cs_ap_dm
-			where pm_jay = 'Y'
-			union all
-			select distinct temp_card_num
-			from dwh.asri_tap_family_ap_dm
-			where pm_jay = 'Y'
-			union all
-			select distinct temp_card_num
-			from dwh.asri_janmabhoomi_family_dm
-			where pm_jay = 'Y') ca on ca.householdcardno = ap.FAMILY_CARD_NO
+inner join (SELECT householdcardno
+		   FROM rawdata.tmp_asri_data_shared_to_nha
+		   union
+		   select householdcardno
+		   FROM rawdata.tmp_total_health_cards
+		   UNION
+		   SELECT householdcardno
+		   FROM rawdata.total_health_cards_delhi_ver_2) ca  on ca.householdcardno = ap.FAMILY_CARD_NO
 left join (select loc_id,loc_name as patient_district from dwh.asri_locations_dm) al on al.loc_id = ap.district_code
 left join (select loc_id,loc_name as patient_mandal from dwh.asri_locations_dm) alm on alm.loc_id = ap.mandal_code;
 
 
-drop materialized view dwh.asri_hosp_daily_feedback_mv;
+
+
+drop materialized view  IF EXISTS   dwh.asri_hosp_daily_feedback_mv;
 
 create materialized view dwh.asri_hosp_daily_feedback_mv as 
 select  hosp_feedback_id,
@@ -510,7 +509,7 @@ left join( select  user_id ,new_emp_code ,first_name, last_name, gender , cug,  
 
 
 
-drop materialized view dwh.PEX_verified_preauth_approve_time;
+drop materialized view  IF EXISTS   dwh.PEX_verified_preauth_approve_time;
 
 create materialized view dwh.PEX_verified_preauth_approve_time as
 SELECT
@@ -525,7 +524,7 @@ left join (select hosp_id,hosp_name,hosp_type,govt_hosp_type from dwh.asri_hospi
 
 
 
-drop materialized view dwh.preauth_approve_discharge_time;
+drop materialized view  IF EXISTS  dwh.preauth_approve_discharge_time;
 
 create materialized view dwh.preauth_approve_discharge_time as
 SELECT
@@ -547,7 +546,7 @@ WHERE
 
    
    
-  drop materialized view dwh.spec_procedure_claims_count;
+  drop materialized view  IF EXISTS  dwh.spec_procedure_claims_count;
 
 create materialized view dwh.spec_procedure_claims_count as
 select cs_dis_main_code as speciality_code,dis_main_name as speciality_name,
@@ -571,7 +570,7 @@ left join (select dis_main_id,dis_sk,dis_main_name from dwh.asri_disease_main_cd
 
 
 
-drop materialized view dwh.delivery_case_details_mv;
+drop materialized view  IF EXISTS   dwh.delivery_case_details_mv;
 
 create materialized view dwh.delivery_case_details_mv as
 select 
@@ -630,17 +629,48 @@ where rwn=1
 ) roh on roh.case_id=ac.case_id;
 
 
+drop  materialized view  IF EXISTS  dwh.new_govt_panel_doctor_performance;
+
+create  materialized view dwh.new_govt_panel_doctor_performance as
+select aa.case_id,  (select cmb_dtl_name from dwh.asri_combo_cd ac where acf.case_status = ac.cmb_dtl_id) as case_status, acf.cs_dis_main_code as speciality_code, speciality_name, case_hosp_id, case_hosp_name,case_hosp_type,case_govt_hosp_type, case_hospital_district,
+new_emp_code,USER_NAME,DOC_INSTITUTION,user_role_name,aa.crt_dt as action_taken_time,action_taken, FORM_SUBMITTED_DATE,
+ppd_hosp_id, ppd_hosp_name, ppd_hosp_type, ppd_govt_hosp_type, ppd_hospital_district,
+       case when pdd.user_id is not null then 1 else 0 end as form_submitted_yn,
+       case when pdd.user_id is not null and aa.case_id is not null then 1 else 0 end as form_submitted_case_performed_yn,
+       old_doctor_yn, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
+from (select user_id,user_role,doc_institution,(NVL(FIRST_NAME , '') || ' ' || NVL(LAST_NAME, '')) AS USER_NAME,new_emp_code,
+		     case when cast(SUBSTRING(new_emp_code FROM 6) as int) <1000 then 1
+				  else 0 end as old_doctor_yn 
+      from dwh.asri_users_dm
+	  where user_role = 'CD301' and DOC_INSTITUTION is not null) au
+left join (select case_id,act_id,act_by,crt_dt
+	  	    from dwh.asri_audit_ft 
+            where trunc(crt_dt)>= TO_DATE('2024-03-01','YYYY-MM-DD') 
+                  and act_id in ('CD3017','CD304','CD302','CD303','CD3018','CD121','CD1183','CD1181','CD1182')) aa on aa.act_by = au.user_id
+LEFT JOIN (SELECT USER_ID,LOGIN_ID,CRT_DT as FORM_SUBMITTED_DATE, hosp_name
+		   FROM dwh.asri_panel_doc_details_dm) pdd ON au.USER_ID = pdd.USER_ID
+left join (select case_id,case_status, case_hosp_code, cs_dis_main_code
+		   from dwh.asri_case_ft) acf on aa.case_id = acf.case_id
+left join (select hosp_id as case_hosp_id, hosp_name as case_hosp_name , case when hosp_type='C' then 'Corporate' when hosp_type='G' then 'Government' end as case_hosp_type,govt_hosp_type as case_govt_hosp_type, dist_id as case_hosp_dist_id from dwh.asri_hospitals_dm) ah  on acf.case_hosp_code = ah.case_hosp_id	
+left join (select hosp_id as ppd_hosp_id , hosp_name as ppd_hosp_name , case when hosp_type='C' then 'Corporate' when hosp_type='G' then 'Government' end as ppd_hosp_type,govt_hosp_type as ppd_govt_hosp_type, dist_id as ppd_hosp_dist_id from dwh.asri_hospitals_dm) ah2  on pdd.hosp_name = ah2.ppd_hosp_id		 
+left join (select cmb_dtl_id,cmb_dtl_name as action_taken
+		  from dwh.asri_combo_cd) acc on aa.act_id = acc.cmb_dtl_id
+left join (select cmb_dtl_id,cmb_dtl_name as user_role_name
+		  from dwh.asri_combo_cd) acc2 on au.user_role = acc2.cmb_dtl_id
+LEFT JOIN (SELECT loc_id, loc_name as case_hospital_district, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) d_loc on d_loc.loc_id = ah.case_hosp_dist_id
+LEFT JOIN (SELECT loc_id, loc_name as ppd_hospital_district, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) d_loc2 on d_loc2.loc_id = ah2.ppd_hosp_dist_id
+left join (select  dis_main_id , dis_main_name as speciality_name from dwh.asri_disease_main_cd ) dm on dm.dis_main_id = acf.cs_dis_main_code
+;
 
 
-
-drop materialized view dwh.asri_ppd_cpd_performance_mv;
+drop materialized view  IF EXISTS   dwh.asri_ppd_cpd_performance_mv;
 
 create materialized view dwh.asri_ppd_cpd_performance_mv as
 select 
 *, 
 case when act_id in ('CD121','CD120','CD1181','CD1182','CD119','CD20053','CD1184') then 'CPD Actions'
 when act_id in ('CD3017','CD304','CD3018','CD302','CD303') then 'PPD Actions' 
-end as action_type
+end as action_type , CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 from 
 (select 
 au.login_name as panel_doctor_login_name,au.user_id as panel_doctor_user_id,FIRST_NAME,LAST_NAME, au.USER_NAME as panel_doctor_user_name,USER_ROLE, acm.cmb_dtl_name as user_role_name,aud.crt_dt as action_taken_date,
@@ -684,7 +714,7 @@ order by au.user_id
 
 
 
-drop materialized view dwh.govt_hosp_spec_preauths_rs;
+drop materialized view  IF EXISTS   dwh.govt_hosp_spec_preauths_rs;
 
 create materialized view dwh.govt_hosp_spec_preauths_rs as
 select case_id,hosp_name,hosp_disp_code as nwh_code,dis_main_name as speciality,
@@ -700,7 +730,7 @@ where hosp_type = 'G';
 
 
 
-drop  materialized view dwh.hosp_doctor_splty;
+drop  materialized view  IF EXISTS   dwh.hosp_doctor_splty;
 
 create materialized view dwh.hosp_doctor_splty as 
 select REQ_NO, REG_NUM, ah.HOSP_ID,HOSP_NAME,SPCLTY_CODE as speciality_code,DIS_MAIN_NAME as speciality_name,HOSP_ACTIVE_YN,HOSP_CITY,al.LOC_NAME AS DISTRICT_NAME,alm.LOC_NAME AS VILLAGE_NAME,HOSP_TYPE,GOVT_HOSP_TYPE, IS_ACTIVEYN AS DOCTOR_ACTIVE_YN, IS_APPLIED, CRT_USR, CRT_DT, LST_UPD_USR, LST_UPD_DT, STATE_CODE, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
@@ -717,7 +747,7 @@ left join (select loc_id,loc_id_sk,loc_name from dwh.asri_locations_dm where loc
 
 
 
-drop materialized view dwh.hosp_empanelment;
+drop materialized view  IF EXISTS   dwh.hosp_empanelment;
 
 create materialized view dwh.hosp_empanelment as
 select hospinfo_id,hosp_name,hosp_bed_strength,upd_dt as last_upd_dt,hosp_empanelment_status,empanelment_pending_by,waiting_empanelment_in_days,
@@ -726,7 +756,7 @@ select hospinfo_id,hosp_name,hosp_bed_strength,upd_dt as last_upd_dt,hosp_empane
 	   		WHEN (empanelment_pending_by in ('Inspection Assigned - DC') AND waiting_empanelment_in_days<=7) THEN 'Within SLA Application'
 	   		WHEN (empanelment_pending_by in ('Inspection Assigned - DC') AND waiting_empanelment_in_days>7) THEN 'Beyond SLA Application'
 	   		ELSE ''
-	   		END sla_lapse_bucket
+	   		END sla_lapse_bucket, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 from
 (select hospinfo_id,hosp_name,hosp_bed_strength,cmb_dtl_name as hosp_empanelment_status,upd_dt,
 	   CASE WHEN (STATUS = 'CD385') THEN 'Total Applications Registered - DyEO NT'
@@ -747,7 +777,7 @@ left join dwh.asri_combo_cd ac on aeh.status = ac.cmb_dtl_id);
 
 
 
-drop materialized view dwh.medico_forwarded_nam_forwarded_time;
+drop materialized view  IF EXISTS   dwh.medico_forwarded_nam_forwarded_time;
 
 create materialized view dwh.medico_forwarded_nam_forwarded_time as
 SELECT
@@ -770,7 +800,7 @@ left join (select user_id,new_emp_code as login_name,(isnull(first_name,'') + ' 
 
 
 
-drop materialized view dwh.medco_to_nam_forwarded_delay_mv;
+drop materialized view  IF EXISTS   dwh.medco_to_nam_forwarded_delay_mv;
 
 create materialized view dwh.medco_to_nam_forwarded_delay_mv as
 select 
@@ -799,7 +829,7 @@ select
         ELSE 'Q4'
     END AS nam_forwarded_quarter,
     DATEDIFF(hour,cs_preauth_dt,cs_dt_pre_auth) AS medco_forwarded_nam_forwarded_diff_hours,
-    DATEDIFF(hour,cs_preauth_dt,cs_dt_pre_auth)/24.0 AS medco_forwarded_nam_forwarded_diff_days
+    DATEDIFF(hour,cs_preauth_dt,cs_dt_pre_auth)/24.0 AS medco_forwarded_nam_forwarded_diff_days, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 FROM (select case_id,case_hosp_code,cs_dis_main_code,case_regn_date,cs_preauth_dt,cs_dt_pre_auth,CASE_PATIENT_NO from dwh.asri_case_ft
      where trunc(cs_dt_pre_auth)>=TO_DATE('2023-04-01', 'YYYY-MM-DD') and cs_preauth_dt is not null and cs_dt_pre_auth is not null) ac
 left join (select case_id,act_by,crt_dt from dwh.asri_audit_ft where act_id in ('CD76')) aa on ac.case_id = aa.case_id
@@ -815,7 +845,7 @@ left join (select cmb_dtl_id, cmb_dtl_name from dwh.asri_combo_cd) acc on acc.cm
 
 
 
-drop materialized view dwh.asri_nam_to_preauth_forwarding_delay_mv;
+drop materialized view  IF EXISTS   dwh.asri_nam_to_preauth_forwarding_delay_mv;
 
 create materialized view dwh.asri_nam_to_preauth_forwarding_delay_mv as
 select  
@@ -843,14 +873,14 @@ select
         ELSE 'Q4'
     END AS PEX_Verified_quarter,
     DATEDIFF(hour,cs_dt_pre_auth,pex_verified_date)/24.0 AS nam_forwarded_pex_verified_diff_days,
-    ROUND(DATEDIFF('hour', cs_dt_pre_auth,pex_verified_date), 1) AS nam_forwarded_pex_verified_diff_hours
+    ROUND(DATEDIFF('hour', cs_dt_pre_auth,pex_verified_date), 1) AS nam_forwarded_pex_verified_diff_hours, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 FROM (select case_id,case_hosp_code,cs_dis_main_code,case_regn_date,cs_preauth_dt,cs_dt_pre_auth,CASE_PATIENT_NO from dwh.asri_case_ft) acf
 inner join (select case_id,crt_dt as pex_verified_date, act_by from dwh.asri_audit_ft where crt_dt BETWEEN TO_DATE('2023-04-01', 'YYYY-MM-DD') AND TO_DATE('2024-02-29', 'YYYY-MM-DD') and act_id = 'CD771') aa on acf.case_id = aa.case_id
 left join (select dis_main_id,dis_main_name as speciality_name from dwh.asri_disease_main_cd) adm on acf.cs_dis_main_code = adm.dis_main_id
 left join (select hosp_id,hosp_name,hosp_type,govt_hosp_type from dwh.asri_hospitals_dm) ah on acf.case_hosp_code = ah.hosp_id
 left join (select patient_id,crt_usr, patient_ipop, crt_dt  from dwh.asri_patient_dm ) ap on acf.CASE_PATIENT_NO=ap.PATIENT_ID
 left join( select distinct user_id ,new_emp_code ,first_name, last_name, gender , cug,  active_yn, user_role  from dwh.asri_users_dm ) aud on aud.user_id = ap.crt_usr
-left join (select hosp_id , hosp_name ,  hosp_type ,  govt_hosp_type , dist_id , hosp_empnl_ref_num from asri_hospitals_dm  ) ahd on ahd.hosp_id  = acf.case_hosp_code
+left join (select hosp_id , hosp_name ,  hosp_type ,  govt_hosp_type , dist_id , hosp_empnl_ref_num from dwh.asri_hospitals_dm  ) ahd on ahd.hosp_id  = acf.case_hosp_code
 LEFT JOIN(SELECT hospinfo_id,status,hosp_bed_strength,pannumber, panholdername, mandal, constituency_code,district_code, city_code  FROM  dwh.asri_empnl_hospinfo_dm) hp_info ON hp_info.hospinfo_id=ahd.hosp_empnl_ref_num
 LEFT JOIN (SELECT loc_id, loc_name as hospital_mandal, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) m_loc ON m_loc.loc_id = hp_info.mandal
 LEFT JOIN (SELECT loc_id, loc_name as hospital_district, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) d_loc ON d_loc.loc_id = ahd.dist_id
@@ -862,7 +892,7 @@ where cs_dt_pre_auth is not null ;
 
 
 
-drop materialized view  dwh.asri_onbed_pat_visit_fdbk_mv;
+drop materialized view  IF EXISTS  dwh.asri_onbed_pat_visit_fdbk_mv;
 
 create materialized view dwh.asri_onbed_pat_visit_fdbk_mv as 
 select 
@@ -897,8 +927,8 @@ left  JOIN (
     SELECT patient_id, ration_card_no AS patient_ration_card_no, sachivalayam_name,  age AS patient_age, gender AS patient_gender, mandal_code , district_code AS pat_district_code, uhidvalue
     FROM dwh.asri_patient_dm
 ) ap ON ap.patient_id = ac.case_patient_no
-LEFT JOIN ( SELECT loc_id,  loc_name AS patient_district, loc_parnt_id FROM asri_locations_dm ) lp_d ON lp_d.loc_id = ap.pat_district_code
-LEFT JOIN (  SELECT loc_id,  loc_name AS patient_state, loc_parnt_id FROM asri_locations_dm)lp_s on lp_s.loc_id=lp_d.loc_parnt_id
+LEFT JOIN ( SELECT loc_id,  loc_name AS patient_district, loc_parnt_id FROM dwh.asri_locations_dm ) lp_d ON lp_d.loc_id = ap.pat_district_code
+LEFT JOIN (  SELECT loc_id,  loc_name AS patient_state, loc_parnt_id FROM dwh.asri_locations_dm)lp_s on lp_s.loc_id=lp_d.loc_parnt_id
 inner join(select hosp_id, hosp_name, dist_id, hosp_type , HOSP_EMPNL_REF_NUM  from dwh.asri_hospitals_dm where isactive_ap = 'Y') ah on ah.hosp_id = ac.case_hosp_code
 left join (select HOSPINFO_ID, HOSP_BED_STRENGTH,district_code , mandal   from dwh.asri_empnl_hospinfo_dm) aeh on ah.HOSP_EMPNL_REF_NUM = aeh.HOSPINFO_ID
 LEFT JOIN (SELECT loc_id, loc_name as hospital_mandal, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) m_loc ON m_loc.loc_id = aeh.mandal
@@ -909,11 +939,11 @@ left join (select cmb_dtl_id , cmb_dtl_name  from dwh.asri_combo_cd) cmb on cmb.
 
 
 
-drop materialized view dwh.wt_empnl_hosp_active_doctors_dtls_mv;
+drop materialized view  IF EXISTS   dwh.empnl_hosp_active_doctors_dtls_mv;
 
-create materialized view dwh.wt_empnl_hosp_active_doctors_dtls_mv as
+create materialized view dwh.empnl_hosp_active_doctors_dtls_mv as
 select 
-ah.hosp_id, hosp_name as hospital_name, hosp_disp_code as hospital_display_code, hosp_empnl_ref_num as HSIN_Number, hosp_contact_no as authorized_person_number , status as hosp_status_code, cmb.cmb_dtl_name as hosp_status, hosp_bed_strength, hosp_email as hosp_email_id,
+ah.hosp_id, hosp_name as hospital_name, hosp_disp_code as hospital_display_code, hosp_empnl_ref_num as HSIN_Number, hosp_contact_no as authorized_person_number , hosp_status, hosp_bed_strength, hosp_email as hosp_email_id,
 case when ah.pan_number is not null then ah.pan_number
     when ah.pan_number is null and hp_info.pannumber is not null then hp_info.pannumber
 else ' ' end as pan_card_number,
@@ -926,7 +956,8 @@ CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 from
 (SELECT 
 hosp_id,hosp_empnl_ref_num, hosp_contact_no, hosp_name, hosp_disp_code,hosp_email, hosp_type, govt_hosp_type, hosp_empnl_date, hosp_addr1, hosp_city,  tds_exemp_status, pan_number, isactive_ap, dist_id
-FROM dwh.asri_hospitals_dm where isactive_ap='Y') ah 
+,case when isactive_ap='Y' then 'Active'  when isactive_ap='N' then 'In-Active'  when isactive_ap='D' then 'Delist'  when isactive_ap='E' then 'De-Empanelment' when isactive_ap='R' then 'Re-Empanelment' when isactive_ap='S' then 'Suspended' end as hosp_status
+FROM dwh.asri_hospitals_dm ) ah 
 left JOIN(SELECT hospinfo_id,status,hosp_bed_strength,pannumber, panholdername, mandal, constituency_code,district_code, hosp_state, city_code  FROM  dwh.asri_empnl_hospinfo_dm) hp_info ON hp_info.hospinfo_id=ah.hosp_empnl_ref_num
 left join (select distinct * from
 (select distinct hosp_id,req_no, NVL(dctr_name,'') as doctor_name, reg_num, university, experience, contactno,is_activeyn, apprv_status, 'Duty Doctor'  as role,lst_upd_dt as job_ended_date, crt_dt as job_started_date from dwh.asri_duty_dctrs_dm
@@ -951,16 +982,16 @@ left join (select city_id , city_name from dwh.asri_major_city_dm )amcd on amcd.
 LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh.asri_combo_cd ) cmb ON cmb.cmb_dtl_id = hp_info.status
 LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh.asri_combo_cd ) cmb1 ON cmb1.cmb_dtl_id = ad.apprv_status
 left join (select distinct reg_num as ds_regnum, spclty_code from dwh.asri_doctor_splty_dm where is_activeyn='Y') sds on sds.ds_regnum = ad.reg_num
-LEFT JOIN ( SELECT dis_main_id, dis_main_name as doctor_mapped_speciality_name  FROM dwh.asri_disease_main_cd ) dm_p ON dm_p.dis_main_id = sds.spclty_code;
+LEFT JOIN ( SELECT dis_main_id, dis_main_name as doctor_mapped_speciality_name  FROM dwh.asri_disease_main_cd where dis_main_id not in ('1','2','3','4','5','6','7','8','9','10','11','12','13') ) dm_p ON dm_p.dis_main_id = sds.spclty_code;
 
 
 
 
 
 
-drop materialized view dwh.wt_hospdist_vs_patientdist_mv;
+drop materialized view  IF EXISTS   dwh.hospdist_vs_patientdist_mv;
 
-create materialized view dwh.wt_hospdist_vs_patientdist_mv as 
+create materialized view dwh.hospdist_vs_patientdist_mv as 
 SELECT
     ac.case_id,
     case_hosp_code,
@@ -1030,7 +1061,7 @@ INNER JOIN (
     SELECT case_id, dis_main_code, surgery_code FROM dwh.asri_case_surgery_dm
 ) acs ON acs.case_id = ac.case_id
 INNER JOIN (
-    SELECT hosp_id, hosp_name, dist_id AS hosp_district_id, hosp_type, govt_hosp_type FROM asri_hospitals_dm
+    SELECT hosp_id, hosp_name, dist_id AS hosp_district_id, hosp_type, govt_hosp_type FROM dwh.asri_hospitals_dm
 ) ah ON ah.hosp_id = ac.case_hosp_code
 INNER JOIN (
     SELECT STATUS_ID, GROUP_ID FROM dwh.asrim_case_status_group WHERE GROUP_ID = 'CD17'
@@ -1041,24 +1072,24 @@ LEFT JOIN (
     SELECT cmb_dtl_id, cmb_dtl_name FROM dwh.asri_combo_cd
 ) cmb ON cmb.cmb_dtl_id = ac.case_status
 LEFT JOIN (
-    SELECT loc_id, loc_name AS patient_mandal FROM asri_locations_dm
+    SELECT loc_id, loc_name AS patient_mandal FROM dwh.asri_locations_dm
 ) lp_m ON lp_m.loc_id = ap.mandal_code
 LEFT JOIN (
-    SELECT loc_id,  loc_name AS patient_district, loc_parnt_id FROM asri_locations_dm
+    SELECT loc_id,  loc_name AS patient_district, loc_parnt_id FROM dwh.asri_locations_dm
 ) lp_d ON lp_d.loc_id = ap.pat_district_code
 LEFT JOIN (
-    SELECT loc_id,  loc_name AS patient_state, loc_parnt_id FROM asri_locations_dm
+    SELECT loc_id,  loc_name AS patient_state, loc_parnt_id FROM dwh.asri_locations_dm
 )lp_s on lp_s.loc_id=lp_d.loc_parnt_id
 LEFT JOIN (
     SELECT loc_id, loc_parnt_id, loc_name AS hosp_dist
-    FROM asri_locations_dm
+    FROM dwh.asri_locations_dm
 ) lh_d ON lh_d.loc_id = ah.hosp_district_id
 LEFT JOIN (
     SELECT loc_id, loc_parnt_id, loc_name  as hosp_state
-    FROM asri_locations_dm
+    FROM dwh.asri_locations_dm
 )lh_s on lh_s.loc_id = lh_d.loc_parnt_id
 LEFT JOIN (
-    SELECT dis_main_id, dis_main_name AS case_dis_name FROM asri_disease_main_cd
+    SELECT dis_main_id, dis_main_name AS case_dis_name FROM dwh.asri_disease_main_cd
 ) dm ON dm.dis_main_id = ac.cs_dis_main_code
 LEFT JOIN (
 select surgery_id,surgery_desc 
@@ -1069,7 +1100,7 @@ where ranking = 1
 
 
 
-drop materialized view dwh.foss_aasra_people_benefit_overview_mv;
+drop materialized view  IF EXISTS  dwh.foss_aasra_people_benefit_overview_mv;
 
 create materialized view dwh.foss_aasra_people_benefit_overview_mv as 
 select 
@@ -1129,7 +1160,7 @@ LEFT JOIN (SELECT LOC_ID,LOC_NAME AS VILLAGE_NAME
 
           
 
-drop materialized view dwh.asri_aasra_paid_overlap_mv;
+drop materialized view  IF EXISTS   dwh.asri_aasra_paid_overlap_mv;
 
 create materialized view dwh.asri_aasra_paid_overlap_mv as 
 select   
@@ -1217,7 +1248,7 @@ where case_aasra_amount<>0
 where next_case_id is not null and aasra_end_date>=next_aasra_paid_date;
 
 
-drop materialized view dwh.speciality_inclusion;
+drop materialized view  IF EXISTS   dwh.speciality_inclusion;
 
 create materialized view dwh.speciality_inclusion as 
 select hospinfo_id,hosp_name,hosp_bed_strength,upd_dt as last_upd_dt,hosp_speciality_inclusion_status,speciality_inclusion_pending_by,waiting_empanelment_in_days,
@@ -1246,7 +1277,7 @@ from (select * from dwh.asri_empnl_hospinfo_dm where
 left join dwh.asri_combo_cd ac on aeh.enhanced_status = ac.cmb_dtl_id);
 
 
-drop materialized view dwh.trust_doctor_performance_daily;
+drop materialized view  IF EXISTS   dwh.trust_doctor_performance_daily;
 
 create materialized view dwh.trust_doctor_performance_daily as
 select case_id,action_taken_date,user_id,(isnull(first_name,'') + ' '+ isnull(last_name,'')) as user_name,user_role_name, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
@@ -1259,7 +1290,7 @@ where user_role_name in ('PTD','CTD','JEO-CLAIMS');
 
 
 
-drop  materialized view dwh.ration_card_procedure_multiple_times_utilization;
+drop  materialized view  IF EXISTS   dwh.ration_card_procedure_multiple_times_utilization;
 
 create materialized view dwh.ration_card_procedure_multiple_times_utilization as
 select case_id,case_patient_no,case_status_name,speciality_code,speciality_name,
@@ -1318,7 +1349,7 @@ where no_of_times_procedure_utilized>1;
 
 
 
-drop materialized view dwh.family_multiProc_case_data;
+drop materialized view  IF EXISTS   dwh.family_multiProc_case_data;
 
 create materialized view dwh.family_multiProc_case_data as
 SELECT 
@@ -1354,13 +1385,13 @@ SELECT
     ah.govt_hosp_type,
     CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 FROM
-    asri_case_ft acf
+    dwh.asri_case_ft acf
         LEFT JOIN
-    asri_patient_dm apd ON apd.patient_id = acf.case_patient_no
+    dwh.asri_patient_dm apd ON apd.patient_id = acf.case_patient_no
         LEFT JOIN
-    asri_case_surgery_dm acsd ON acsd.case_id = acf.case_id
+    dwh.asri_case_surgery_dm acsd ON acsd.case_id = acf.case_id
         LEFT JOIN
-    asri_case_claim_dm accd ON accd.case_id = acf.case_id
+    dwh.asri_case_claim_dm accd ON accd.case_id = acf.case_id
         LEFT JOIN
     (SELECT 
         PATIENT_ID,
@@ -1384,7 +1415,7 @@ left join (select hosp_id , hosp_name , hosp_contact_person , hosp_contact_no , 
 		 
 LEFT JOIN (SELECT loc_id, loc_name as hospital_district, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) d_loc on d_loc.loc_id = ah.dist_id
 LEFT JOIN (SELECT loc_id, loc_name as hospital_state, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) s_loc ON s_loc.loc_id = d_loc.loc_parnt_id
-LEFT JOIN ( SELECT loc_id, loc_name AS patient_mandal FROM asri_locations_dm) lp_m ON lp_m.loc_id = apd.mandal_code
+LEFT JOIN ( SELECT loc_id, loc_name AS patient_mandal FROM dwh.asri_locations_dm) lp_m ON lp_m.loc_id = apd.mandal_code
 LEFT JOIN (SELECT loc_id, loc_name as patient_district, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) pd_loc on pd_loc.loc_id = apd.district_code
 LEFT JOIN (SELECT loc_id, loc_name as patient_state, lgd_code, loc_parnt_id from dwh.asri_locations_dm ) ps_loc ON ps_loc.loc_id = pd_loc.loc_parnt_id
 WHERE
@@ -1459,7 +1490,7 @@ WHERE
    
    
    
-drop materialized view dwh.ration_card_speciality_multiple_times_utilization;
+drop materialized view  IF EXISTS   dwh.ration_card_speciality_multiple_times_utilization;
 
 create materialized view dwh.ration_card_speciality_multiple_times_utilization as
 select case_id,case_patient_no,case_status_name,speciality_code,speciality_name,
@@ -1467,7 +1498,7 @@ select case_id,case_patient_no,case_status_name,speciality_code,speciality_name,
 		case_hosp_code,hosp_name,hosp_type,govt_hosp_type,hosp_district,hosp_village,
 		preauth_initiated_date,preauth_approved_date,preauth_approved_amount,
 		surgery_date,discharge_date,claim_submit_date,claim_submitted_amount,claim_paid_amount,
-		no_of_times_speciality_utilized
+		no_of_times_speciality_utilized, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 from
 (select ac.case_id,case_patient_no,case_status_name,cs_dis_main_code as speciality_code,speciality_name,
 		ration_card_no,family_card_no,age,gender,patient_district,patient_mandal,
@@ -1510,32 +1541,35 @@ where no_of_times_speciality_utilized>1;
 
 
 
-drop materialized view dwh.PMJAY_cards;
+drop materialized view  IF EXISTS   dwh.PMJAY_cards;
 
 create materialized view dwh.PMJAY_cards as
-select householdcardno,district_name,
+select 
+householdcardno,district_name,
        case when FAMILY_CARD_NO is not null then 'Utilized'
        else 'Not Utilized' end as utilization_status, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
-from (select householdcardno,district
-	  from dwh.asri_family_cs_ap_dm
-      where pm_jay = 'Y'
-      union all
-      select temp_card_num,district_id
-      from dwh.asri_janmabhoomi_family_dm
-      where pm_jay = 'Y'
-      union all
-      select temp_card_num,null as district_id
-	  from dwh.asri_tap_family_ap_dm
-	  where pm_jay = 'Y') ca 
-left join (select distinct CASE WHEN POSITION('/' IN RATION_CARD_NO) > 0 THEN SUBSTRING(RATION_CARD_NO, 1, POSITION('/' IN RATION_CARD_NO) - 1)
-           ELSE RATION_CARD_NO
-           end AS FAMILY_CARD_NO
-		   from dwh.asri_patient_dm) pa on ca.householdcardno = pa.FAMILY_CARD_NO
-left join (select loc_id, loc_name as district_name from dwh.asri_locations_dm) al on ca.district = al.loc_id;
+from
+(SELECT householdcardno, uhid_value, district_name
+		   FROM rawdata.tmp_asri_data_shared_to_nha
+		   union
+		   select householdcardno, uhid_value, district_name
+		   FROM rawdata.tmp_total_health_cards
+		   UNION
+		   SELECT householdcardno, uhid_value, district_name
+		   FROM rawdata.total_health_cards_delhi_ver_2) ca 
+left join (select 
+			distinct FAMILY_CARD_NO
+			from 
+			(select case_id , case_patient_no  from dwh.asri_case_ft where cs_preauth_dt is not null and DATE(cs_preauth_dt)>='2019-01-01') ac 
+			inner join (select patient_id ,CASE WHEN POSITION('/' IN RATION_CARD_NO) > 0  THEN SUBSTRING(RATION_CARD_NO, 1, POSITION('/' IN RATION_CARD_NO) - 1) ELSE RATION_CARD_NO  end AS FAMILY_CARD_NO  from dwh.asri_patient_dm) ap 
+					on ap.patient_id = ac.case_patient_no
+) pa on ca.householdcardno = pa.FAMILY_CARD_NO;
 
 
+		  
 
-drop materialized view dwh.government_hosp_deliveries;
+
+drop materialized view  IF EXISTS   dwh.government_hosp_deliveries;
 
 create materialized view dwh.government_hosp_deliveries as
 SELECT ac.CASE_ID,HOSP_ID,HOSP_NAME,GOVT_HOSP_TYPE,HOSP_DISTRICT,PROCEDURE_NAME,CS_PREAUTH_DT AS PREAUTH_INITIATED_DATE,
@@ -1572,7 +1606,7 @@ LEFT JOIN (SELECT DISTINCT PATIENT_ID
 
 
 
-drop materialized view dwh.cmco_preauth_approved_cases;
+drop materialized view  IF EXISTS   dwh.cmco_preauth_approved_cases;
 
 create materialized view dwh.cmco_preauth_approved_cases as
 SELECT ac.case_id,speciality_name + ' ' + '(' + cs_dis_main_code + ')' as speciality,procedure_name,case_status_name,
@@ -1620,7 +1654,7 @@ left join (select loc_id,loc_name as patient_state
 
 
 
-drop materialized view dwh.spec_procedure_preauths_count;
+drop materialized view  IF EXISTS   dwh.spec_procedure_preauths_count;
 
 create materialized view dwh.spec_procedure_preauths_count as
 select cs_dis_main_code as speciality_code,dis_main_name as speciality_name,surgery_code as procedure_code,
@@ -1643,72 +1677,10 @@ left join (select distinct dis_main_id,dis_main_id_fk,surgery_id,surgery_desc fr
 left join (select dis_main_id,dis_sk,dis_main_name from dwh.asri_disease_main_cd) adm on f.cs_dis_main_code_fk = adm.dis_sk;
 
 
-
-
-drop  materialized view dwh.ml_case_summary;
-
-create materialized view dwh.ml_case_summary as
-select acf.case_id,patient_age,patient_sex,patient_caste,patient_district,patient_village,patient_mandal,
-	   disease_speciality,case_procedures,acf.hosp_id,hosp_name,hosp_speciality,hosp_bed_strength,hosp_city,hosp_district,
-	   hosp_village,hosp_type_code,
-	   case when hosp_type_code = 'C' then 'Corporate'
-	   		when hosp_type_code = 'G' then 'Government'
-	   		else ' '
-	   		end as hosp_type,
-	   govt_hosp_type,
-	   case when pa.CASE_ID is not null then 'Y'
-	   		else 'N'
-	   		end as PREAUTH_APPROVED_YN,
-	   case_registration_date,
-	   'FY' || 
-  	   (CASE WHEN EXTRACT(MONTH FROM case_registration_date) <= 3 
-       THEN TO_CHAR(MOD(EXTRACT(YEAR FROM case_registration_date) - 1, 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM case_registration_date), 100), 'FM00')
-       ELSE TO_CHAR(MOD(EXTRACT(YEAR FROM case_registration_date), 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM case_registration_date) + 1, 100), 'FM00') END) AS case_registration_date_f_year,
-	   preauth_inintiated_date,
-	   'FY' || 
-  	   (CASE WHEN EXTRACT(MONTH FROM preauth_inintiated_date) <= 3 
-       THEN TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_inintiated_date) - 1, 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_inintiated_date), 100), 'FM00')
-       ELSE TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_inintiated_date), 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_inintiated_date) + 1, 100), 'FM00') END) AS preauth_inintiated_date_f_year,
-       preauth_approved_reject_date,
-       'FY' || 
-  	   (CASE WHEN EXTRACT(MONTH FROM preauth_approved_reject_date) <= 3 
-       THEN TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_approved_reject_date) - 1, 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_approved_reject_date), 100), 'FM00')
-       ELSE TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_approved_reject_date), 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_approved_reject_date) + 1, 100), 'FM00') END) AS preauth_approved_reject_date_f_year,
-	   preauth_approved_amount,claim_amount
-from (select case_id,case_hosp_code as hosp_id,hosp_fk,case_patient_no,patient_fk,cancer_yn,cs_dis_main_code,
-	  cs_dis_main_code_fk,to_date(case_regn_date,'YYYY-MM-DD') as case_registration_date,
-	  to_date(cs_dt_pre_auth, 'YYYY-MM-DD') as preauth_inintiated_date,
-	  to_date(cs_apprv_rej_dt, 'YYYY-MM-DD') as preauth_approved_reject_date,
-	  pck_appv_amt as preauth_approved_amount,cs_cl_amount as claim_amount
-	  from dwh.asri_case_ft) acf
-left join (select distinct CASE_ID
-			FROM (SELECT CASE_ID, ACT_ID FROM dwh.asri_audit_ft) aa 
-			INNER JOIN (SELECT STATUS_ID FROM dwh.asrim_case_status_group WHERE GROUP_ID = 'CD17') csg ON aa.ACT_ID = csg.STATUS_ID) pa ON acf.CASE_ID = pa.CASE_ID
-left join (select case_id,LISTAGG(surgery_code,',') as case_procedures
-		   from dwh.asri_case_surgery_dm group by case_id) acsd on acf.CASE_ID = acsd.case_id
-left join (select hosp_sk,hosp_id,hosp_name,hosp_speciality,hosp_city,hosp_vil_cd,hosp_vil_cd_fk,dist_id,dist_id_fk,
-		   hosp_type as hosp_type_code,govt_hosp_type,hosp_empnl_ref_num  
-		   from dwh.asri_hospitals_dm) ah on acf.hosp_fk = ah.hosp_sk
-left join (select hospinfo_id,hosp_bed_strength from dwh.asri_empnl_hospinfo_dm) ehi on ah.hosp_empnl_ref_num = ehi.hospinfo_id 
-left join (select patient_sk,patient_id,age as patient_age,gender as patient_sex,caste,
-		   district_code,village_code,mandal_code
-		   from dwh.asri_patient_dm) apd on acf.patient_fk = apd.patient_sk
-left join (select loc_id,loc_id_sk,loc_name as patient_district
-		   from dwh.asri_locations_dm where loc_hdr_id = 'LH6') alp on apd.district_code = alp.loc_id
-left join (select loc_id,loc_id_sk,loc_name as patient_village
-		   from dwh.asri_locations_dm where loc_hdr_id = 'LH8') alpv on apd.village_code = alpv.loc_id
-left join (select loc_id,loc_id_sk,loc_name as patient_mandal
-		   from dwh.asri_locations_dm where loc_hdr_id = 'LH7') alpm on apd.mandal_code = alpm.loc_id
-left join (select loc_id,loc_id_sk,loc_name as hosp_district
-		   from dwh.asri_locations_dm where loc_hdr_id = 'LH6') al on ah.dist_id_fk = al.loc_id_sk
-left join (select loc_id,loc_id_sk,loc_name as hosp_village
-		   from dwh.asri_locations_dm where loc_hdr_id = 'LH8') alv on ah.hosp_vil_cd_fk = alv.loc_id_sk
-left join (select dis_main_id,dis_sk,dis_main_name as disease_speciality 
-		   from dwh.asri_disease_main_cd) adm on acf.cs_dis_main_code_fk = adm.dis_sk
-left join (select cmb_dtl_id,cmb_dtl_name as patient_caste from dwh.asri_combo_cd) acc on acc.cmb_dtl_id = apd.caste;       
+      
           
           
-drop materialized view dwh.ration_card_pat_proc_utilization_mv;
+drop materialized view  IF EXISTS   dwh.ration_card_pat_proc_utilization_mv;
 
 create materialized view dwh.ration_card_pat_proc_utilization_mv as
 select  
@@ -1786,7 +1758,7 @@ where cnt>1
 
 
 
-drop  materialized view dwh.asri_followup_case_claim_details_mv;
+drop  materialized view  IF EXISTS  dwh.asri_followup_case_claim_details_mv;
 
 create materialized view dwh.asri_followup_case_claim_details_mv as
 select  
@@ -1844,7 +1816,7 @@ LEFT JOIN (SELECT loc_id, loc_name as patient_state, lgd_code, loc_parnt_id from
 
 
 
-drop materialized view dwh.foss_dist_wise_anm_feedback_report_mv;
+drop materialized view  IF EXISTS   dwh.foss_dist_wise_anm_feedback_report_mv;
 
 create materialized view dwh.foss_dist_wise_anm_feedback_report_mv as
 SELECT *,
@@ -1891,7 +1863,7 @@ left join (select hosp_id,hosp_type, govt_hosp_type  from dwh.asri_hospitals_dm 
 
 
 
-drop materialized view dwh.asri_mithra_service_fdbk_mv;
+drop materialized view  IF EXISTS   dwh.asri_mithra_service_fdbk_mv;
 
 create materialized view dwh.asri_mithra_service_fdbk_mv as 
 select 
@@ -1929,7 +1901,7 @@ LEFT JOIN (SELECT loc_id, loc_name as patient_state, lgd_code, loc_parnt_id from
 
 
 
-drop materialized view dwh.asri_flagged_cases_mv;
+drop materialized view  IF EXISTS   dwh.asri_flagged_cases_mv;
 
 create materialized view dwh.asri_flagged_cases_mv as
 select
@@ -1960,45 +1932,44 @@ select
 	afdad.amount,
 	afdd.crt_dt,
 	afdd.lst_upd_dt,
-	case when afdad.amount <= 20000 then 'DDC' when afdad.amount > 20000 then 'SDC' end  as DDC_SDC, hospital_state,  CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
+	case when hospital_state not like 'ANDHRA PRADESH' then 'SDC' when acc3.cmb_dtl_name='Forwarded after flagging' then 'SDC' when afdad.amount <= 20000 then 'DDC' when afdad.amount > 20000 then 'SDC' end  as DDC_SDC, hospital_state,  CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 	from
 	(select flg_id,case_id,case_status,crt_dt,flg_type,flg_status,crt_usr,active_yn,lst_upd_usr,lst_upd_dt
 		from (select flg_id,case_id,case_status,crt_dt, flg_type,flg_status,crt_usr,active_yn,lst_upd_usr,lst_upd_dt,rank() over(partition by case_id order by lst_upd_dt desc) as ranking 
 	  from dwh.asri_flgging_dtls_dm) af
 	where ranking = 1)afdd
-left join asri_combo_cd acc on
+left join dwh.asri_combo_cd acc on
 	acc.cmb_dtl_id = afdd.case_status
-left join asri_combo_cd acc2 on
+left join dwh.asri_combo_cd acc2 on
 	acc2.cmb_dtl_id = afdd.flg_type
-left join asri_combo_cd acc3 on
+left join dwh.asri_combo_cd acc3 on
 	acc3.cmb_dtl_id = afdd.flg_status
-left join asri_grievance_services_dm agsd on 
+left join dwh.asri_grievance_services_dm agsd on 
 	agsd.case_id = afdd.case_id 
-left join asri_users_dm aud on
+left join dwh.asri_users_dm aud on
 	aud.user_id = afdd.crt_usr 
-left join asri_users_dm aud1 on
+left join dwh.asri_users_dm aud1 on
 	aud1.user_id = afdd.lst_upd_usr 
-left join asri_combo_cd acc4 on 
+left join dwh.asri_combo_cd acc4 on 
 acc4.cmb_dtl_id = aud.user_role
-left join asri_combo_cd acc5 on 
+left join dwh.asri_combo_cd acc5 on 
 acc5.cmb_dtl_id = aud1.user_role
-left join asri_case_ft acf  on afdd.case_id = acf.case_id 
+left join dwh.asri_case_ft acf  on afdd.case_id = acf.case_id 
 left join (select case_id,amount
 		  from  (select case_id ,amount ,rank() over(partition by case_id order by crt_dt desc) as ranking 
-		   from asri_flgging_dtls_audit_dm)
+		   from dwh.asri_flgging_dtls_audit_dm)
 		   where ranking = 1) afdad on afdad.case_id = afdd.case_id 
-left join ( select hosp_id , hosp_name , hosp_type, govt_hosp_type , application_type , hosp_empnl_date , hosp_estab_yr, dist_id  from asri_hospitals_dm /*where isactive_ap = 'Y'*/) ahd on ahd.hosp_id = acf.case_hosp_code
-left join (select loc_id , loc_name as hospital_district,loc_parnt_id from asri_locations_dm  ) ald on ald.loc_id = dist_id
-left join (select loc_id , loc_name as hospital_state ,loc_parnt_id from asri_locations_dm  ) als on als.loc_id = ald.loc_parnt_id 
-where afdd.crt_dt > TO_DATE('2020-11-30','YYYY-MM-DD'); 
+left join ( select hosp_id , hosp_name , hosp_type, govt_hosp_type , application_type , hosp_empnl_date , hosp_estab_yr, dist_id  from dwh.asri_hospitals_dm /*where isactive_ap = 'Y'*/) ahd on ahd.hosp_id = acf.case_hosp_code
+left join (select loc_id , loc_name as hospital_district,loc_parnt_id from dwh.asri_locations_dm  ) ald on ald.loc_id = dist_id
+left join (select loc_id , loc_name as hospital_state ,loc_parnt_id from dwh.asri_locations_dm  ) als on als.loc_id = ald.loc_parnt_id 
+where afdd.crt_dt > TO_DATE('2020-11-30','YYYY-MM-DD');
 
 
 
 
 
 
-
-drop materialized view dwh.asri_chemo_days_diff_mv;
+drop materialized view  IF EXISTS   dwh.asri_chemo_days_diff_mv;
 
 create materialized view dwh.asri_chemo_days_diff_mv as 
 select *
@@ -2062,7 +2033,7 @@ inner join (
 
 
 
-drop materialized view dwh.ration_card_pat_spec_utilization_mv;
+drop materialized view  IF EXISTS   dwh.ration_card_pat_spec_utilization_mv;
 
 create materialized view dwh.ration_card_pat_spec_utilization_mv as
 select  
@@ -2138,7 +2109,7 @@ where cnt>1
 
 
 
-drop materialized view dwh.asri_discharge_facilitation_mv;
+drop materialized view  IF EXISTS  dwh.asri_discharge_facilitation_mv;
 
 create materialized view dwh.asri_discharge_facilitation_mv as
 select 
@@ -2176,7 +2147,7 @@ left join (select distinct case_id , dis_photo_avail_yn  from dwh.asri_claim_exe
 
 
 
-drop materialized view dwh.asri_grievances_mv;
+drop materialized view  IF EXISTS  dwh.asri_grievances_mv;
 
 create materialized view dwh.asri_grievances_mv as
 select 
@@ -2194,41 +2165,41 @@ else null
 end as DDC_SDC, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 from 
 (select
-	agsd.gr_seq_id , agsd.gr_source , agmd1.gr_desc , agsd.type_of_gr , agmd.gr_desc as griev_type_desc , grv_hosp_id as hosp_id , ahd.hosp_name , ahd.hosp_type, ahd.govt_hosp_type , ahd.hosp_empnl_date, agsd.call_type , acc.cmb_dtl_name as call_type_name , agsd.gr_on_role , acc2.cmb_dtl_name as gr_on_role_name ,acc4.cmb_dtl_name as gr_role_status_name, agsd.gr_on_usr , aud.login_name as gr_on_usr_name , agsd.template_id , agsd.info_rcvd , agsd.info_provd , agsd.additional_remarks , agsd.gr_status , acc3.cmb_dtl_name as gr_status_name , agsd.crt_usr ,
+	agsd.gr_seq_id ,agsd.case_id, agsd.gr_source , agmd1.gr_desc , agsd.type_of_gr , agmd.gr_desc as griev_type_desc , grv_hosp_id as hosp_id , ahd.hosp_name , ahd.hosp_type, ahd.govt_hosp_type , ahd.hosp_empnl_date, agsd.call_type , acc.cmb_dtl_name as call_type_name , agsd.gr_on_role , acc2.cmb_dtl_name as gr_on_role_name ,acc4.cmb_dtl_name as gr_role_status_name, agsd.gr_on_usr , aud.login_name as gr_on_usr_name , agsd.template_id , agsd.info_rcvd , agsd.info_provd , agsd.additional_remarks , agsd.gr_status , acc3.cmb_dtl_name as gr_status_name , agsd.crt_usr ,
 	aud1.login_name as crt_user_name , agsd.crt_dt , agsd.lst_upd_usr , aud2.login_name as lst_updated_user_name, aud2.first_name , aud2.user_role , agsd.gr_nature , agmd2.gr_desc as gr_nature_name , agsd.gr_source_desc , agsd.gr_nature_desc , agsd.gr_type_desc , agsd.gr_ptdist_name , agsd.gr_hspdst_name , agsd.gr_hspname_desc , agsd.gr_role_status , agsd.amount_of_moneycollected,
      hospital_district as hosp_dist_name, hospital_state
 from 
 (select 
 agsd.*,NVL(ac.case_hosp_code,agsd.hosp_id ) as grv_hosp_id
 from
-	asri_grievance_services_dm agsd 
+	dwh.asri_grievance_services_dm agsd 
 left join (select case_id , case_hosp_code  from dwh.asri_case_ft) ac on ac.case_id=agsd.case_id 
 where
 	agsd.crt_dt > TO_DATE('2020-12-15',
 	'YYYY-MM-DD')
 )agsd
-left join asri_grievance_master_dm agmd on
+left join dwh.asri_grievance_master_dm agmd on
 	agmd.gr_seq_id = agsd.type_of_gr
-left join asri_grievance_master_dm agmd1 on
+left join dwh.asri_grievance_master_dm agmd1 on
 	agmd1.gr_seq_id = agsd.gr_source
-left join ( select hosp_id , hosp_name , hosp_type, govt_hosp_type , application_type , hosp_empnl_date , hosp_estab_yr, dist_id  from asri_hospitals_dm/* where isactive_ap = 'Y'*/) ahd on ahd.hosp_id = agsd.grv_hosp_id
-left join (select loc_id , loc_name as hospital_district,loc_parnt_id from asri_locations_dm  ) ald on ald.loc_id = dist_id
-left join (select loc_id , loc_name as hospital_state ,loc_parnt_id from asri_locations_dm  ) als on als.loc_id = ald.loc_parnt_id
-left join asri_combo_cd acc on
+left join ( select hosp_id , hosp_name , hosp_type, govt_hosp_type , application_type , hosp_empnl_date , hosp_estab_yr, dist_id  from dwh.asri_hospitals_dm/* where isactive_ap = 'Y'*/) ahd on ahd.hosp_id = agsd.grv_hosp_id
+left join (select loc_id , loc_name as hospital_district,loc_parnt_id from dwh.asri_locations_dm  ) ald on ald.loc_id = dist_id
+left join (select loc_id , loc_name as hospital_state ,loc_parnt_id from dwh.asri_locations_dm  ) als on als.loc_id = ald.loc_parnt_id
+left join dwh.asri_combo_cd acc on
 	acc.cmb_dtl_id = agsd.call_type
-left join asri_combo_cd acc2 on
+left join dwh.asri_combo_cd acc2 on
 	acc2.cmb_dtl_id = agsd.gr_on_role
-left join asri_combo_cd acc3 on
+left join dwh.asri_combo_cd acc3 on
 	acc3.cmb_dtl_id = agsd.gr_status
-left join asri_combo_cd acc4 on
+left join dwh.asri_combo_cd acc4 on
 	acc4.cmb_dtl_id = agsd.gr_role_status
-left join asri_users_dm aud on
+left join dwh.asri_users_dm aud on
 	aud.user_id = agsd.gr_on_usr
-left join asri_users_dm aud1 on
+left join dwh.asri_users_dm aud1 on
 	aud1.user_id = agsd.crt_usr
-left join asri_users_dm aud2 on
+left join dwh.asri_users_dm aud2 on
 	aud2.user_id = agsd.lst_upd_usr
-left join asri_grievance_master_dm agmd2 on
+left join dwh.asri_grievance_master_dm agmd2 on
 	agmd2.gr_seq_id = agsd.gr_nature
 );
 
@@ -2238,11 +2209,10 @@ left join asri_grievance_master_dm agmd2 on
 
 
 
+DROP MATERIALIZED VIEW  IF EXISTS  dwh.anm_feedback_mv;
 
-DROP MATERIALIZED VIEW wt_anm_feedback_mv CASCADE;
-
-create materialized view dwh.wt_anm_feedback_mv as
-SELECT distinct  *,
+create materialized view dwh.anm_feedback_mv as
+SELECT   *,
 case when is_pat_tranferred='1' then trans_district_name
 else dis_patient_district end as dis_patient_district_final,
 case when is_pat_tranferred='1' then trans_sachivalaym_name
@@ -2250,7 +2220,7 @@ else dis_sachivalayam_name end as dis_patient_sachivalayam_final,
 case when tr_phc is not null then tr_phc 
 else ds_phc end as dis_patient_phc_final,
 case when diff<=8 then 'Within SLA'
-	else 'Beyond SLA' end as feedback_status
+	else 'Beyond SLA' end as feedback_status, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 FROM 
 (SELECT 
 ds.case_id, ds.mandal_name as dis_hosp_mandal_name, ds.hosp_dist_name as dis_hosp_dist_name, ds.hosp_id as dis_hosp_id, ds.hosp_name as dis_hosp_name,eh.hosp_type, eh.govt_hosp_type, ds.patient_id as discharged_patient_id,ds.patient_name as discharged_patient_name,
@@ -2292,22 +2262,28 @@ left join (select patient_id, uhidvalue from dwh.asri_patient_dm ) ap on ap.pati
 
 
 
---drop materialized view dwh.rep_hosp_dist_rejections_mv;
+drop materialized view  IF EXISTS  dwh.rep_hosp_dist_rejections_mv;
 
 create materialized view dwh.rep_hosp_dist_rejections_mv as 
-select distinct
+select 
 ac.case_id, ah.hosp_name,hosp_disp_code as hospital_code, d_loc.loc_name as hosp_district ,s_loc.loc_name as hosp_state , case_status, cmb_dtl_name as status_name,status_date,claim_submitted_date,surgery_date, discharge_date
 ,ap.PATIENT_ID, ap.RATION_CARD_NO,ap.uhidvalue , fdk_case_id,
 case when case_status = 'CDFD354' and dis_patient_district_final is not null then dis_patient_district_final
  else DISTRICT_NAME end as patient_district_name,
 case when case_status = 'CDFD354' and dis_patient_district_final is not null then PATIENT_STATE_NAME_FINAL
-else PATIENT_STATE_NAME end as patient_state, 
-fm.householdcardno, FAMILY_CARD_NO, pm_jay
+else PATIENT_STATE_NAME end as patient_state, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 from 
 (select case_id , case_no , case_hosp_code , case_patient_no , case_status , lst_upd_dt as status_date, clm_sub_dt as claim_submitted_date, cs_cl_amount as claim_amount, cs_dis_dt as discharge_date, cs_surg_dt as surgery_date from dwh.asri_case_ft 
 where case_status in ('CDFD354','CDSC354','CD0489') ) ac 
 inner join (SELECT hosp_id, hosp_name,dist_id, hosp_disp_code FROM dwh.asri_hospitals_dm) ah on ah.hosp_id = ac.case_hosp_code
-left join (select case_id as fdk_case_id,dis_patient_district_final, dis_hosp_dist_name from dwh.wt_anm_feedback_mv) fdk on fdk.fdk_case_id = ac.case_id
+left join
+( select ds.case_id as fdk_case_id,case when  tr.case_id is null  then dis_patient_district else trans_district_name end as dis_patient_district_final
+			  from 
+ 		(select case_id,  patient_district as dis_patient_district  FROM dwh.asri_discharge_case_data_dm ) ds 
+ 		left join (select case_id , district_id from dwh.anm_transfer_case_dm ) tr ON tr.case_id = ds.case_id 
+		LEFT JOIN (SELECT LOC_ID,LOC_NAME as trans_district_name , loc_parnt_id 
+           FROM dwh.asri_locations_dm) td on td.loc_id = tr.district_id
+) fdk on fdk.fdk_case_id = ac.case_id
 LEFT JOIN (SELECT loc_id, loc_name,lgd_code, loc_parnt_id  from dwh.asri_locations_dm ) d_loc ON d_loc.loc_id = ah.dist_id
 LEFT JOIN (SELECT loc_id, loc_name,lgd_code, loc_parnt_id  from dwh.asri_locations_dm ) s_loc ON s_loc.loc_id = d_loc.loc_parnt_id
 LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh.asri_combo_cd ) cmb ON cmb.cmb_dtl_id = ac.case_status
@@ -2319,7 +2295,6 @@ LEFT JOIN (SELECT PATIENT_ID,DISTRICT_CODE,MANDAL_CODE, village_code, RATION_CAR
           end AS FAMILY_CARD_NO,
           uhidvalue 
           FROM dwh.asri_patient_dm  ) ap ON ap.PATIENT_ID = ac.CASE_PATIENT_NO
-left join (select householdcardno, membername,uid_no,relation_name, mobile_no, pm_jay  from dwh.asri_family_cs_ap_dm) fm on fm.householdcardno = ap.FAMILY_CARD_NO
 LEFT JOIN (SELECT LOC_ID AS MANDAL_CODE,LGD_CODE AS MANDAL_LGD_CODE,LOC_NAME AS MANDAL_NAME
            FROM dwh.asri_locations_dm) al ON al.MANDAL_CODE = ap.MANDAL_CODE
 LEFT JOIN (SELECT LOC_ID,LOC_NAME AS DISTRICT_NAME, loc_parnt_id 
@@ -2335,7 +2310,7 @@ LEFT JOIN (SELECT LOC_ID,LOC_NAME AS VILLAGE_NAME
 
 
 
-drop materialized view dwh.cancer_data_analysis;
+drop materialized view  IF EXISTS   dwh.cancer_data_analysis;
 
 create materialized view dwh.cancer_data_analysis as
 SELECT ac.CASE_ID,cs_dis_main_code as speciality_code,SPECIALITY_NAME,HOSP_ID,HOSP_NAME,HOSP_TYPE,GOVT_HOSP_TYPE,HOSP_DISTRICT,CASE_PATIENT_NO,
@@ -2365,7 +2340,7 @@ LEFT JOIN (SELECT DIS_MAIN_ID,dis_sk,DIS_MAIN_NAME AS SPECIALITY_NAME
 		   FROM dwh.asri_disease_main_cd) dm ON ac.CS_DIS_MAIN_CODE_FK = dm.dis_sk;
 
 
-drop materialized view dwh.case_regn_preauth_approve_time;
+drop materialized view  IF EXISTS  dwh.case_regn_preauth_approve_time;
 
 create materialized view dwh.case_regn_preauth_approve_time as
 SELECT
@@ -2380,7 +2355,7 @@ WHERE
    
    
  
-drop materialized view dwh.executives_performance_daily;
+drop materialized view  IF EXISTS  dwh.executives_performance_daily;
 
 create materialized view dwh.executives_performance_daily as
 select case_id,action_taken_date,user_id,(isnull(first_name,'') + ' '+ isnull(last_name,'')) as user_name,user_role_name , CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
@@ -2392,7 +2367,7 @@ where user_role_name in ('PEX','CEX','FEX','TIDS');
 
 		  
 		  
-drop materialized view dwh.case_regn_medico_forwarded_time;
+drop materialized view  IF EXISTS  dwh.case_regn_medico_forwarded_time;
 
 create materialized view dwh.case_regn_medico_forwarded_time as
 SELECT
@@ -2408,7 +2383,7 @@ WHERE
    
    
 		  
-drop materialized view dwh.cancer_data_with_procedures_analysis;
+drop materialized view  IF EXISTS   dwh.cancer_data_with_procedures_analysis;
 
 create materialized view dwh.cancer_data_with_procedures_analysis as
 SELECT ac.CASE_ID,cs_dis_main_code as speciality_code,SPECIALITY_NAME,surgery_code as procedure_code,surgery_desc as procedure_name,HOSP_ID,HOSP_NAME,HOSP_TYPE,GOVT_HOSP_TYPE,HOSP_DISTRICT,CASE_PATIENT_NO,
@@ -2455,7 +2430,7 @@ left join (select surgery_id,surgery_desc
            where ranking = 1) as2 ON cs.surgery_code = as2.surgery_id;		  
 		  
 		  
-drop materialized view dwh.asri_ip_op_registration_mv_1;
+drop materialized view  IF EXISTS  dwh.asri_ip_op_registration_mv_1;
 
 create materialized view dwh.asri_ip_op_registration_mv_1 as 
 select 
@@ -2471,7 +2446,7 @@ when aud.gender = 'F' then 'Female'
 end as gender ,
 aud.cug, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 from 
-asri_patient_dm ap 
+dwh.asri_patient_dm ap 
 left join (select case_id , case_patient_no , case_hosp_code , case_regn_date  from dwh.asri_case_ft) ac  on ac.case_patient_no = ap.patient_id
 inner join(select hosp_id, hosp_name, dist_id, HOSP_EMPNL_REF_NUM,hosp_type   from dwh.asri_hospitals_dm where isactive_ap = 'Y') ah on ah.hosp_id = ap.reg_hosp_id
 left join (select HOSPINFO_ID, HOSP_BED_STRENGTH,district_code , mandal   from dwh.asri_empnl_hospinfo_dm) aeh on ah.HOSP_EMPNL_REF_NUM = aeh.HOSPINFO_ID
@@ -2483,7 +2458,7 @@ left join (select cmb_dtl_id, cmb_dtl_name from dwh.asri_combo_cd) acc on acc.cm
 
 
 
-drop materialized view dwh.foss_asri_people_benefit_overview_mv;
+drop materialized view  IF EXISTS  dwh.foss_asri_people_benefit_overview_mv;
 
 create materialized view dwh.foss_asri_people_benefit_overview_mv as
 select  
@@ -2524,7 +2499,7 @@ left join (select cmb_dtl_id, cmb_dtl_name from dwh.asri_combo_cd ) cmb on cmb.c
 
 
 
-drop materialized view dwh.asri_dist_wise_proc_total_amount_mv;
+drop materialized view  IF EXISTS   dwh.asri_dist_wise_proc_total_amount_mv;
 
 create materialized view dwh.asri_dist_wise_proc_total_amount_mv AS
 select 
@@ -2576,7 +2551,7 @@ NVL(acf.cs_dis_main_code,'')||'-'||NVL(dm.dis_main_name,'')||'_'||NVL(asd.surger
 
 
 
-drop materialized view dwh.asri_case_wise_preauth_apprv_aasra_paid_mv;
+drop materialized view  IF EXISTS   dwh.asri_case_wise_preauth_apprv_aasra_paid_mv;
 
 create materialized view dwh.asri_case_wise_preauth_apprv_aasra_paid_mv as
 select  
@@ -2644,7 +2619,7 @@ left join (select distinct dis_main_id , dis_main_name  from dwh.asri_disease_ma
 
 
 
-drop materialized view dwh.asri_onbed_check_mv;
+drop materialized view  IF EXISTS   dwh.asri_onbed_check_mv;
 
 create materialized view dwh.asri_onbed_check_mv as 
 select  
@@ -2664,7 +2639,7 @@ from
 (select case_id , case_hosp_code , case_patient_no , case_regn_date , cs_apprv_rej_dt,cs_dis_main_code  from dwh.asri_case_ft where DATE(case_regn_date) >='2022-04-01') ac 
 inner join (select distinct case_id , act_id , crt_dt from 
 		(select case_id , act_id , crt_dt , act_by,act_order, RANK() OVER(partition by case_id , act_id order by crt_dt desc ) as ranking from dwh.asri_audit_ft where act_id in ('CD73','CD76','CD329','CD732','CD75', 'CD771', 'CD3017', 'CD85','CD426', 'CD430', 'CD1800',
-			'CD1801', 'CD1802', 'CD1803', 'CD50', 'CD64', 'CD3025', 'CD3026', ' CD3027', 'CD3028','CD1994', 'Cd427') )where ranking=1
+			'CD1801', 'CD1802', 'CD1803', 'CD50', 'CD64', 'CD3025', 'CD3026', ' CD3027', 'CD3028','CD1994', 'Cd427', 'CD736', 'CD691','CD304','CD93','CD305','CD81', 'CD3') )where ranking=1
 ) aud on aud.case_id=ac.case_id
 left join (select hosp_id , hosp_name , hosp_contact_person , hosp_contact_no , cug_no , hosp_city , NVL(hosp_addr1,'')||','||NVL(hosp_addr2,'')||','||NVL(hosp_addr3,'') as hospital_address,case when isactive_ap='Y' then 'Active'else  'DeActive'  end as hosp_active_status,
 	  			hosp_email , case when hosp_type='C' then 'Corporate' when hosp_type='G' then 'Government' end as hosp_type,govt_hosp_type, dist_id , hosp_empnl_ref_num , hosp_empnl_date
@@ -2684,7 +2659,10 @@ where ranking = 1
 
 
 
-drop materialized view dwh.followup_stages_tracking;
+
+
+
+drop materialized view  IF EXISTS   dwh.followup_stages_tracking;
 
 create materialized view dwh.followup_stages_tracking as 
 select f.case_id,disease_category,hosp_id,hosp_name,hosp_type,govt_hosp_type,hosp_district,hosp_village,patient_gender,
@@ -2717,7 +2695,7 @@ left join (select dis_main_id,dis_sk,dis_main_name disease_category from dwh.asr
 
 
 
-drop materialized view dwh.case_wise_aasra_eligible_mv;
+drop materialized view  IF EXISTS   dwh.case_wise_aasra_eligible_mv;
 
 create materialized view dwh.case_wise_aasra_eligible_mv as
 select   
@@ -2800,7 +2778,7 @@ left join (select distinct dis_main_id , dis_main_name  from dwh.asri_disease_ma
 
 
 
-drop materialized view dwh.asri_dist_wise_proc_total_cases_mv;
+drop materialized view  IF EXISTS  dwh.asri_dist_wise_proc_total_cases_mv;
 
 create materialized view dwh.asri_dist_wise_proc_total_cases_mv as 
 select 
@@ -2847,65 +2825,64 @@ NVL(acf.cs_dis_main_code,'')||'-'||NVL(dm.dis_main_name,'')||'_'||NVL(asd.surger
         )
  group by fy_preauth_aprv, state, district ,surgery_code, surgery_desc, spec_surg_aasra_amt_desc ; 
 
+drop  materialized view dwh.ml_case_summary;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+create materialized view dwh.ml_case_summary as
+select acf.case_id,patient_age,patient_sex,patient_caste,patient_district,patient_village,patient_mandal,
+	   disease_speciality,case_procedures,acf.hosp_id,hosp_name,hosp_speciality,hosp_bed_strength,hosp_city,hosp_district,
+	   hosp_village,hosp_type_code,
+	   case when hosp_type_code = 'C' then 'Corporate'
+	   		when hosp_type_code = 'G' then 'Government'
+	   		else ' '
+	   		end as hosp_type,
+	   govt_hosp_type,
+	   case when pa.CASE_ID is not null then 'Y'
+	   		else 'N'
+	   		end as PREAUTH_APPROVED_YN,
+	   case_registration_date,
+	   'FY' || 
+  	   (CASE WHEN EXTRACT(MONTH FROM case_registration_date) <= 3 
+       THEN TO_CHAR(MOD(EXTRACT(YEAR FROM case_registration_date) - 1, 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM case_registration_date), 100), 'FM00')
+       ELSE TO_CHAR(MOD(EXTRACT(YEAR FROM case_registration_date), 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM case_registration_date) + 1, 100), 'FM00') END) AS case_registration_date_f_year,
+	   preauth_inintiated_date,
+	   'FY' || 
+  	   (CASE WHEN EXTRACT(MONTH FROM preauth_inintiated_date) <= 3 
+       THEN TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_inintiated_date) - 1, 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_inintiated_date), 100), 'FM00')
+       ELSE TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_inintiated_date), 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_inintiated_date) + 1, 100), 'FM00') END) AS preauth_inintiated_date_f_year,
+       preauth_approved_reject_date,
+       'FY' || 
+  	   (CASE WHEN EXTRACT(MONTH FROM preauth_approved_reject_date) <= 3 
+       THEN TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_approved_reject_date) - 1, 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_approved_reject_date), 100), 'FM00')
+       ELSE TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_approved_reject_date), 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM preauth_approved_reject_date) + 1, 100), 'FM00') END) AS preauth_approved_reject_date_f_year,
+	   preauth_approved_amount,claim_amount
+from (select case_id,case_hosp_code as hosp_id,hosp_fk,case_patient_no,patient_fk,cancer_yn,cs_dis_main_code,
+	  cs_dis_main_code_fk,to_date(case_regn_date,'YYYY-MM-DD') as case_registration_date,
+	  to_date(cs_dt_pre_auth, 'YYYY-MM-DD') as preauth_inintiated_date,
+	  to_date(cs_apprv_rej_dt, 'YYYY-MM-DD') as preauth_approved_reject_date,
+	  pck_appv_amt as preauth_approved_amount,cs_cl_amount as claim_amount
+	  from dwh.asri_case_ft) acf
+left join (select distinct CASE_ID
+			FROM (SELECT CASE_ID, ACT_ID FROM dwh.asri_audit_ft) aa 
+			INNER JOIN (SELECT STATUS_ID FROM dwh.asrim_case_status_group WHERE GROUP_ID = 'CD17') csg ON aa.ACT_ID = csg.STATUS_ID) pa ON acf.CASE_ID = pa.CASE_ID
+left join (select case_id,LISTAGG(surgery_code,',') as case_procedures
+		   from dwh.asri_case_surgery_dm group by case_id) acsd on acf.CASE_ID = acsd.case_id
+left join (select hosp_sk,hosp_id,hosp_name,hosp_speciality,hosp_city,hosp_vil_cd,hosp_vil_cd_fk,dist_id,dist_id_fk,
+		   hosp_type as hosp_type_code,govt_hosp_type,hosp_empnl_ref_num  
+		   from dwh.asri_hospitals_dm) ah on acf.hosp_fk = ah.hosp_sk
+left join (select hospinfo_id,hosp_bed_strength from dwh.asri_empnl_hospinfo_dm) ehi on ah.hosp_empnl_ref_num = ehi.hospinfo_id 
+left join (select patient_sk,patient_id,age as patient_age,gender as patient_sex,caste,
+		   district_code,village_code,mandal_code
+		   from dwh.asri_patient_dm) apd on acf.patient_fk = apd.patient_sk
+left join (select loc_id,loc_id_sk,loc_name as patient_district
+		   from dwh.asri_locations_dm where loc_hdr_id = 'LH6') alp on apd.district_code = alp.loc_id
+left join (select loc_id,loc_id_sk,loc_name as patient_village
+		   from dwh.asri_locations_dm where loc_hdr_id = 'LH8') alpv on apd.village_code = alpv.loc_id
+left join (select loc_id,loc_id_sk,loc_name as patient_mandal
+		   from dwh.asri_locations_dm where loc_hdr_id = 'LH7') alpm on apd.mandal_code = alpm.loc_id
+left join (select loc_id,loc_id_sk,loc_name as hosp_district
+		   from dwh.asri_locations_dm where loc_hdr_id = 'LH6') al on ah.dist_id_fk = al.loc_id_sk
+left join (select loc_id,loc_id_sk,loc_name as hosp_village
+		   from dwh.asri_locations_dm where loc_hdr_id = 'LH8') alv on ah.hosp_vil_cd_fk = alv.loc_id_sk
+left join (select dis_main_id,dis_sk,dis_main_name as disease_speciality 
+		   from dwh.asri_disease_main_cd) adm on acf.cs_dis_main_code_fk = adm.dis_sk
+left join (select cmb_dtl_id,cmb_dtl_name as patient_caste from dwh.asri_combo_cd) acc on acc.cmb_dtl_id = apd.caste; 

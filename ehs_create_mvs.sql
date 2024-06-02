@@ -1,3 +1,6 @@
+drop materialized view dwh_ehs.op_exec_perf_rep_mv ;
+
+
 create materialized view dwh_ehs.op_exec_perf_rep_mv as
 select  
 eu.user_id as Executive_Id,  user_name as Excecutive_Name, login_name,aud.act_id, aud.crt_dt as action_taken_date, aud.case_id,
@@ -40,6 +43,8 @@ LEFT JOIN ( SELECT user_id, dsgn_id, (isnull(first_name,'') + ' '+ isnull(last_n
 
 
 
+
+drop materialized view dwh_ehs.ehs_preauth_pending_mv;
 
 
 create materialized view dwh_ehs.ehs_preauth_pending_mv as 
@@ -120,7 +125,7 @@ ORDER BY sno
 
 
 
-
+drop materialized view  dwh_ehs.ehs_claims_pending_mv;
 
 
 create materialized view  dwh_ehs.ehs_claims_pending_mv as
@@ -203,6 +208,7 @@ ORDER BY sno
 
 
 
+drop materialized view dwh_ehs.ehs_active_hospitals_dtls_mv;
 
 
 
@@ -234,6 +240,7 @@ left join (select cmb_dtl_id , cmb_dtl_name  from dwh_ehs.asrim_combo_ehs ) cmb 
 
 
 
+drop  materialized view dwh_ehs.MR_Online;
  
 
 create materialized view dwh_ehs.MR_Online as
@@ -265,7 +272,10 @@ left join (select claim_seq,max(crt_dt) as dispached_date
 			group by claim_seq) swa on topd.claim_seq = swa.claim_seq;
 		
 		
-	
+
+		
+drop  materialized view dwh_ehs.MR_Offline;
+
 
 create materialized view dwh_ehs.MR_Offline as
 select trpd.claim_seq as claim_number,NVL(eh.HOSP_NAME,trpd.HOSP_ID) AS HOSP_NAME,hosp_type,hospital_district,
@@ -289,6 +299,8 @@ left join (select claim_seq,max(crt_dt) as dispached_date
 			group by claim_seq) swa on trpd.claim_seq = swa.claim_seq;
 		
 	
+
+drop materialized view dwh_ehs.ppd_perf_rep_mv ;
 
 
 
@@ -323,6 +335,7 @@ LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh_ehs.ehfm_cmb_dtls_cd ) cmb O
 
 
 
+drop materialized view dwh_ehs.ptd_perf_rep_mv;
 
 
 create materialized view dwh_ehs.ptd_perf_rep_mv as
@@ -357,7 +370,7 @@ LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh_ehs.ehfm_cmb_dtls_cd ) cmb O
 
 
 
-
+drop  materialized view dwh_ehs.cpd_perf_rep_mv;
 
 
 create materialized view dwh_ehs.cpd_perf_rep_mv as
@@ -390,6 +403,7 @@ LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh_ehs.ehfm_cmb_dtls_cd ) cmb O
 
 
 
+drop materialized view dwh_ehs.ctd_perf_rep_mv;
 
 
 create materialized view dwh_ehs.ctd_perf_rep_mv as
@@ -422,6 +436,8 @@ LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh_ehs.ehfm_cmb_dtls_cd ) cmb O
 
 
 
+DROP materialized view dwh_ehs.ftd_perf_rep_mv;
+
 
 create materialized view dwh_ehs.ftd_perf_rep_mv as
 select  
@@ -453,11 +469,12 @@ LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh_ehs.ehfm_cmb_dtls_cd ) cmb O
 
 
 
+drop materialized view dwh_ehs.ehs_preauth_pending_details_mv;
 
 
 
 create materialized view dwh_ehs.ehs_preauth_pending_details_mv as 
-select  distinct   * from 
+select     * from 
 (select  
 ec.case_id,preauth_total_package_amt as preauth_inititated_amount,
 dis_main_id as specilaity_code,dis_main_name as speciality_name,emt.icd_proc_code as procedure_code , emt.proc_name,
@@ -492,7 +509,8 @@ ROUND((ROUND(DATEDIFF('hour', LST_UPD_DT, GETDATE()), 1)/24.0),0) as waiting_pre
         WHEN EXTRACT(MONTH FROM case_regn_date) BETWEEN 4 AND 6 THEN 'Q1'
         WHEN EXTRACT(MONTH FROM case_regn_date) BETWEEN 7 AND 9 THEN 'Q2'
         WHEN EXTRACT(MONTH FROM case_regn_date) BETWEEN 10 AND 12 THEN 'Q3'
-        ELSE 'Q4'
+        WHEN EXTRACT(MONTH FROM case_regn_date) BETWEEN 1 AND 3 THEN 'Q4'
+        ELSE Null
     END AS case_regn_quarter,
             'FY' || 
        (CASE WHEN EXTRACT(MONTH FROM lst_upd_dt) <= 3 
@@ -502,16 +520,17 @@ ROUND((ROUND(DATEDIFF('hour', LST_UPD_DT, GETDATE()), 1)/24.0),0) as waiting_pre
         WHEN EXTRACT(MONTH FROM lst_upd_dt) BETWEEN 4 AND 6 THEN 'Q1'
         WHEN EXTRACT(MONTH FROM lst_upd_dt) BETWEEN 7 AND 9 THEN 'Q2'
         WHEN EXTRACT(MONTH FROM lst_upd_dt) BETWEEN 10 AND 12 THEN 'Q3'
-        ELSE 'Q4'
+         WHEN EXTRACT(MONTH FROM lst_upd_dt) BETWEEN 1 AND 3 THEN 'Q4'
+        ELSE Null
     END AS pending_quarter,
 CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 from
-( select case_id ,CASE_HOSP_CODE,case_patient_no, case_regn_date , cs_preauth_dt, preauth_fwd_dt, case_status , lst_upd_dt,lst_upd_usr,patient_scheme,preauth_total_package_amt  from dwh_ehs.ehf_case_ft
+( select case_id ,CASE_HOSP_CODE,case_patient_no, case_regn_date , cs_preauth_dt, preauth_fwd_dt, case_status , lst_upd_dt,lst_upd_usr,patient_scheme,preauth_total_package_amt, asri_cat_code  from dwh_ehs.ehf_case_ft
     WHERE CASE_STATUS IN (	'CD2','CD6','CD651','CD652','CD7','CD12001','CD1301','CD204','CD2041','CD210','CD205','CD2058','CD20581','CD20591','CD206','CD10','CD801','CD217','CD899','CD954','CD897','CD8')
  ) ec 
-left JOIN (SELECT distinct case_id,asri_cat_code,icd_proc_code FROM dwh_ehs.ehf_case_therapy_dm  where activeyn='Y' ) ect ON ect.case_id = ec.case_id
-LEFT JOIN(SELECT distinct asri_code, icd_proc_code, proc_name FROM dwh_ehs.ehfm_main_therapy_dm where state='CD201') emt ON emt.asri_code = ect.asri_cat_code AND emt.icd_proc_code = ect.icd_proc_code
-LEFT JOIN (SELECT distinct dis_main_id,dis_main_name FROM dwh_ehs.ehfm_specialities_dm) esp ON esp.dis_main_id = emt.asri_code
+left JOIN (SELECT  case_id,asri_cat_code,icd_proc_code FROM dwh_ehs.ehf_case_therapy_dm  where activeyn='Y' ) ect ON ect.case_id = ec.case_id
+LEFT JOIN(SELECT  asri_code, icd_proc_code, proc_name FROM dwh_ehs.ehfm_main_therapy_dm where state='CD201') emt ON emt.asri_code = ect.asri_cat_code AND emt.icd_proc_code = ect.icd_proc_code
+LEFT JOIN (SELECT  dis_main_id,dis_main_name FROM dwh_ehs.ehfm_specialities_dm) esp ON esp.dis_main_id = NVL(ec.asri_cat_code,ect.asri_cat_code)
 INNER join (select hosp_id,hosp_name,hosp_email,hosp_contact_person,hosp_contact_no,hosp_dist,case when hosp_type='C' then 'Corporate' when hosp_type='G' then 'Government' end as hospital_type,govt_hosp_type,state_code,hosp_city,
 			(isnull(house_no,'')|| ' ' || isnull(street,'')) as hospital_address, hosp_active_yn, hosp_empnl_date,nabh_flg,bed_strength,hosp_empnl_ref_num
 			from  dwh_ehs.ehfm_hospitals_dm   where  hosp_active_yn='Y'
@@ -528,7 +547,7 @@ where PREAUTH_PENDING_BY is not null ;
 
 
 
-
+drop materialized view dwh_ehs.ehs_arsi_common_emp_details_mv;
 
 
 create materialized view dwh_ehs.ehs_arsi_common_emp_details_mv as
@@ -540,7 +559,7 @@ from
 			(select emp_code,enroll_prnt_id, prt_dept,dept_hod,post_dist,emp_hdist,emp_type,crt_dt,designation,dept_designation,hod_designation,prt_desg,emp_hmand_munci, rank() over(partition by emp_code order by crt_dt desc) as ranking from dwh_ehs.ehf_enrollment_dm )
 				where ranking=1 
 ) en
-left join (select aadhar_id ,ehf_card_no, enroll_id , enroll_sno , blood_group, enroll_name ,enroll_gender ,enroll_status , enroll_prnt_id ,enroll_dob, enroll_relation as enroll_relation_code,crt_dt as enrolled_date from rawdata_ehs.ehf_enrollment_family  ) eef on eef.enroll_prnt_id = en.enroll_prnt_id
+left join (select aadhar_id ,ehf_card_no, enroll_id , enroll_sno , blood_group, enroll_name ,enroll_gender ,enroll_status , enroll_prnt_id ,enroll_dob, enroll_relation as enroll_relation_code,crt_dt::TIMESTAMP  as enrolled_date from rawdata_ehs.ehf_enrollment_family  ) eef on eef.enroll_prnt_id = en.enroll_prnt_id
 inner join (select aadhar_no,uhid
 	  from rawdata.abha_dump_03122023_full adf
 	  union 
@@ -560,7 +579,8 @@ left join (select loc_id,loc_name as emp_municipality, loc_parnt_id from dwh_ehs
 
 
 
-   
+drop materialized view  dwh_ehs.ehs_claims_pending_details_mv;
+ 
 
 create materialized view  dwh_ehs.ehs_claims_pending_details_mv as
 select  
@@ -635,6 +655,7 @@ left join (select dsgn_id,dsgn_name from dwh_ehs.ehfm_designation_dm) ed on ed.d
 
 
 
+drop materialized view dwh_ehs.ehs_followup_pending_mv;
 
 
 create materialized view dwh_ehs.ehs_followup_pending_mv as
@@ -702,6 +723,7 @@ ORDER BY sno
 );
 
 
+drop materialized view dwh_ehs.ehs_chronic_op_claims_pending_mv;
 
 
 create materialized view dwh_ehs.ehs_chronic_op_claims_pending_mv as
@@ -770,9 +792,11 @@ ORDER BY sno
 );
 
 
+drop materialized view dwh_ehs.chronic_op_report_mv;
+
    
 create materialized view dwh_ehs.chronic_op_report_mv as
-select  * from 
+select   * from 
 (SELECT 
 'FY' || 
        (CASE WHEN EXTRACT(MONTH FROM chronic_regn_date) <= 3 
@@ -786,8 +810,8 @@ select  * from
         ELSE Null
     END AS chronic_regn_date_quarter,
  CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt,
-ech.chronic_id, hosp_code,hosp_name as hospital_name,hosp_dist as hospital_district_code, h_d.loc_name as hospital_district,h_d.loc_parnt_id as hospital_state_name, h_s.loc_name as hospital_state, hosp_active_yn, nabh_flg,hospital_type,
-chronic_status, cmb_dtl_name as chronic_status_name, chronic_regn_date, pck_appv_amt, tot_pckg_amt ,claim_amount, clm_sub_dt, consultation_amt,
+ech.chronic_id, chronic_no, hosp_code,hosp_name as hospital_name,hosp_dist as hospital_district_code, h_d.loc_name as hospital_district,h_d.loc_parnt_id as hospital_state_name, h_s.loc_name as hospital_state, hosp_active_yn, nabh_flg,hospital_type,
+chronic_status, cmb_dtl_name as chronic_status_name,chronic_regn_date, case_status_date, pck_appv_amt, tot_pckg_amt ,claim_amount, clm_sub_dt, consultation_amt,
 card_no as patient_card_no, FAMILY_CARD_NO as PATIENT_FAMILY_CARD_NO,ecp.name as patient_name,relation,
 case when relation=0 then 0
 else '1' end as is_dependent, employee_no,
@@ -799,7 +823,7 @@ case when card_type='P' then p_d.loc_name
 	when card_type='E' then ddo_patient_district
 end as patinet_district_final
 FROM 
-(SELECT  chronic_id, hosp_code, chronic_status, chronic_regn_date, pck_appv_amt, tot_pckg_amt,claim_amount, clm_sub_dt, consultation_amt  FROM dwh_ehs.ehf_chronic_case_dtls_dm) ech
+(SELECT  chronic_id,chronic_no,  hosp_code, chronic_status, chronic_regn_date, pck_appv_amt, tot_pckg_amt,claim_amount, clm_sub_dt, consultation_amt, lst_upd_dt as case_status_date  FROM dwh_ehs.ehf_chronic_case_dtls_dm where chronic_status not in ('CD4','CD401X','CD419') ) ech
 LEFT JOIN (SELECT hosp_id, hosp_name, hosp_city, hosp_dist,nabh_flg,case when hosp_type='C' then 'Corporate' when hosp_type='G' then 'Government' end as hospital_type, hosp_active_yn FROM dwh_ehs.ehfm_hospitals_dm ) eh on eh.hosp_id = ech.hosp_code 
 LEFT JOIN (SELECT chronic_id, card_no,
 case when (POSITION('/' IN CARD_NO) - 1) != '-1' then  SUBSTRING(CARD_NO, 1, POSITION('/' IN CARD_NO) - 1)
@@ -823,6 +847,9 @@ left join (select relation_id, relation_name from dwh_ehs.ehfm_relation_mst_dm) 
 );
 
 
+
+
+drop materialized view dwh_ehs.bifurcation_emp_pen_case_details_mv;
 
 
 create materialized view dwh_ehs.bifurcation_emp_pen_case_details_mv as
@@ -857,6 +884,7 @@ LEFT JOIN (SELECT cmb_dtl_id, cmb_dtl_name FROM dwh_ehs.ehfm_cmb_dtls_cd ) cmb O
 
 
 
+drop materialized view dwh_ehs.ehs_followup_pending_details_mv;
 
 
 create materialized view dwh_ehs.ehs_followup_pending_details_mv as
@@ -920,6 +948,8 @@ left join (select patient_id, patient_ipop  from dwh_ehs.ehf_patient_dm ) ep on 
 
 
 
+
+drop materialized view dwh_ehs.ehs_followup_case_details_mv;
 
 
 create materialized view dwh_ehs.ehs_followup_case_details_mv as
@@ -992,6 +1022,8 @@ left join ( select distinct  dsgn_id, dept_designation,hod  from
 ) dsg on dsg.dsgn_id = en.dept_designation and dsg.hod = en.dept_hod  ;
 
 
+drop materialized view dwh_ehs.mis_followup_availed_case_details;
+
 
 create materialized view dwh_ehs.mis_followup_availed_case_details as
 select  
@@ -1053,6 +1085,8 @@ left join ( select distinct  dsgn_id, dept_designation,hod  from
 ) dsg on dsg.dsgn_id = en.dept_designation and en.dept_hod = dsg.hod ;
 
 
+drop materialized view dwh_ehs.ehs_followup_case_claim_details_mv;
+
 
 create  materialized view dwh_ehs.ehs_followup_case_claim_details_mv as
 select 
@@ -1102,6 +1136,8 @@ group by f_case_id
 group by f_case_id,is_first_followup,first_followup_status_code,first_followup_status,is_first_followup_claim_paid,first_followup_claim_paid_amt,first_followup_claim_paid_date,is_second_followup,second_followup_status_code,second_followup_status,is_second_followup_claim_paid,second_followup_claim_paid_amt,second_followup_claim_paid_date,is_third_followup,third_followup_status_code,third_followup_status,is_third_followup_claim_paid,third_followup_claim_paid_amt,third_followup_claim_paid_date,is_fourth_followup,fourth_followup_status_code,fourth_followup_status,is_fourth_followup_claim_paid,fourth_followup_claim_paid_amt,fourth_followup_claim_paid_date
 ;
 
+
+drop materialized view dwh_ehs.ehs_unique_patient_details_mv;
 
 
 create materialized view dwh_ehs.ehs_unique_patient_details_mv as
@@ -1195,6 +1231,7 @@ where FYear is not null;
 
 
 
+drop materialized view dwh_ehs.ehs_followup_tracking_mv;
 
 
 create materialized view dwh_ehs.ehs_followup_tracking_mv as
@@ -1285,6 +1322,8 @@ left join ( select distinct  dsgn_id, dept_designation,hod  from
 
 
 
+drop materialized view dwh_ehs.ehs_empanelled_hosp_list_mv;
+
 
 create materialized view dwh_ehs.ehs_empanelled_hosp_list_mv as 
 select  
@@ -1311,6 +1350,8 @@ left join (select distinct  hospinfo_id, hosp_md_ceo_name , hosp_md_email,hosp_m
 
 
 
+drop materialized view dwh_ehs.MR_AUDIT_mv;
+
 
 create materialized view dwh_ehs.MR_AUDIT_mv as 
 Select swa.claim_seq,current_group_id, case
@@ -1332,7 +1373,7 @@ Select swa.claim_seq,current_group_id, case
 	   'FY' || 
        (CASE WHEN EXTRACT(MONTH FROM crt_dt) <= 3 
        THEN TO_CHAR(MOD(EXTRACT(YEAR FROM crt_dt) - 1, 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM crt_dt), 100), 'FM00')
-       ELSE TO_CHAR(MOD(EXTRACT(YEAR FROM crt_dt), 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM crt_dt) + 1, 100), 'FM00') END) AS crt_dt_f_YEAR
+       ELSE TO_CHAR(MOD(EXTRACT(YEAR FROM crt_dt), 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM crt_dt) + 1, 100), 'FM00') END) AS crt_dt_f_YEAR, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
   from (select current_group_id,next_group_id,crt_dt,crt_usr,case_status,claim_seq from dwh_ehs.scheme_workflow_audit_dm) swa
 left join (select cmb_dtl_id,cmb_dtl_name as case_status_name
 		   from dwh_ehs.ehfm_cmb_dtls_cd) ecd on swa.case_status = ecd.cmb_dtl_id
@@ -1365,9 +1406,9 @@ select
 	'FY' || 
        (CASE WHEN EXTRACT(MONTH FROM inw.crt_dt) <= 3 
        THEN TO_CHAR(MOD(EXTRACT(YEAR FROM inw.crt_dt) - 1, 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM inw.crt_dt), 100), 'FM00')
-       ELSE TO_CHAR(MOD(EXTRACT(YEAR FROM inw.crt_dt), 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM inw.crt_dt) + 1, 100), 'FM00') END) AS crt_dt_f_YEAR
+       ELSE TO_CHAR(MOD(EXTRACT(YEAR FROM inw.crt_dt), 100), 'FM00') || '-' || TO_CHAR(MOD(EXTRACT(YEAR FROM inw.crt_dt) + 1, 100), 'FM00') END) AS crt_dt_f_YEAR, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 from
-	trn_inward_dtls_dm inw
+	dwh_ehs.trn_inward_dtls_dm inw
 left join (
 	select
 		user_id,
@@ -1392,36 +1433,48 @@ left join (
 	from
 		dwh_ehs.ehfm_users_dm) eud1 on
 	inw.lst_upd_usr = eud1.user_id
-left join ehfm_designation_dm edd on
+left join dwh_ehs.ehfm_designation_dm edd on
 	edd.dsgn_id = eud.dsgn_id
-left join ehfm_designation_dm edd1 on
+left join dwh_ehs.ehfm_designation_dm edd1 on
 	edd1.dsgn_id = eud1.dsgn_id
-left join ehfm_cmb_dtls_cd ecdc on
+left join dwh_ehs.ehfm_cmb_dtls_cd ecdc on
 	ecdc.cmb_dtl_id = inw.claim_status
 where eud.dsgn_id in ('DG925','DG10057','DG9995','DG2020','DG150','DG225' );
 
 
 	
-		  
+
+drop materialized view dwh_ehs.ehs_emp_pen_enroll_details_mv;
+
 
 create materialized view dwh_ehs.ehs_emp_pen_enroll_details_mv as 
 select   
-eef.enroll_id,eef.enroll_name,en.enroll_prnt_id as household_enroll_id, eef.aadhar_id, eef.enroll_sno, eef.enroll_dob, eef.blood_group,  eef.ehf_card_no,
+eef.enroll_id,eef.enroll_name,en.enroll_prnt_id as household_enroll_id, eef.aadhar_id, eef.enroll_sno, eef.enroll_dob::TIMESTAMP, 
+emp_hno as employee_house_no ,  emp_hstreetno as employee_street_no, emp_hemail as employee_email,  emp_hphone as employee_phone_no,emp_off_hno as emp_office_house_no,  emp_ostreetno as emp_office_street_no, emp_oemail as emp_office_mail,  emp_ophone as emp_office_phno, emp_marital_status,
+eef.blood_group,  eef.ehf_card_no,
 case when enroll_gender='M' then 'Male' when enroll_gender='F' then 'Female' else '' end as gender, eef.enroll_status as enroll_status_code, ace.cmb_dtl_name as enroll_status,
 eef.enroll_relation_code, relation_name as enroll_relation,
-en.emp_code, en.emp_hphone as emp_phno, en.emp_hemail as emp_email, dsg.dept_designation as emp_dept_designation,en.post_dist as ddo_district_code, emp_ddo_district,en.emp_hmand_munci as emp_municipality_code,emp_municipality ,en.emp_hdist as emp_district_code, emp_district, en_d.loc_parnt_id as emp_state_code, emp_state,
+en.emp_code, prt_dept as employee_ddo_department, dsg.dept_designation as emp_dept_designation,en.post_dist as ddo_district_code, emp_ddo_district,en.emp_hmand_munci as emp_municipality_code,emp_municipality ,en.emp_hdist as emp_district_code, emp_district, en_d.loc_parnt_id as emp_state_code, emp_state,
+en.emp_omand_munci as emp_office_municipality_code, emp_office_municipality, en.emp_odist as emp_office_district_code, emp_office_district, eno_d.loc_parnt_id as emp_office_state_code, emp_office_state,
 emp_type as employee_type_code, cmb.cmb_dtl_name as employee_type, case when NVL(eef.enroll_sno::text, eef.enroll_relation_code )=0 then 0 when NVL(eef.enroll_sno::text, eef.enroll_relation_code) is null then null  else 1 end as is_dependent,
-case when eef.enroll_status in ('CD3020','CD3016') then 1 else 0 end as is_card_generated, DATE(enrolled_date) as enrolled_date,
+--case when eef.enroll_status in ('CD3020','CD3016') then 1 else 0 end as is_card_generated,
+case when eef.enroll_status in ('CD3016') and emp_type in ('CD3024','CD3023') then 1 
+	when  eef.enroll_status in ('CD3020')  then 1 else 0 end as is_card_generated,
+case when eef.enroll_status in ('CD3016') and emp_type in ('CD3024','CD3023') then  NVL(eef.lst_upd_dt,eef.crt_dt)::TIMESTAMP
+	when  eef.enroll_status in ('CD3020')  then  NVL(eef.lst_upd_dt,eef.crt_dt)::TIMESTAMP else null end as card_generated_date,
+--case when eef.enroll_status in ('CD3020','CD3016')  then NVL(eef.lst_upd_dt,eef.crt_dt)::TIMESTAMP  else NULL end as card_generated_date, 
+DATE(en.crt_dt) :: TIMESTAMP as enrolled_date,
 CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 from 
-(select distinct emp_code,enroll_prnt_id, emp_hphone, emp_hemail, serv_dsgn, dept_designation,emp_caste,dept_hod, emp_marital_stat,post_dist,emp_hstate,emp_hmand_munci, emp_type,emp_hdist,crt_dt from 
-			(select emp_code,emp_hphone,enroll_prnt_id, emp_marital_stat, emp_hemail, serv_dsgn, dept_designation,emp_caste,dept_hod,post_dist,emp_hdist,emp_hstate,emp_hmand_munci,emp_type,crt_dt, rank() over(partition by emp_code order by crt_dt desc) as ranking from dwh_ehs.ehf_enrollment_dm )
+(select  emp_code,emp_hphone,enroll_prnt_id, emp_marital_stat,  serv_dsgn, dept_designation,emp_caste,dept_hod,post_dist,emp_hno ,  emp_hstreetno,  emp_hdist, emp_hstate , emp_hmand_munci_sel,  emp_hmand_munci,  emp_hvill_twn,  emp_hemail,   emp_off_hno,  emp_ostreetno,  emp_odist, emp_ostate , emp_omand_munci_sel,  emp_omand_munci,  emp_ovill_twn,  emp_oemail,  emp_ophone,emp_type,crt_dt,prt_dept from 
+			(select emp_code,emp_hphone,enroll_prnt_id, emp_marital_stat,  serv_dsgn, dept_designation,emp_caste,dept_hod,post_dist,emp_hno,  emp_hstreetno,  emp_hdist, emp_hstate , emp_hmand_munci_sel,  emp_hmand_munci,  emp_hvill_twn,  emp_hemail,  emp_off_hno,  emp_ostreetno,  emp_odist, emp_ostate , emp_omand_munci_sel,  emp_omand_munci,  emp_ovill_twn,  emp_oemail,  emp_ophone,emp_type,crt_dt,prt_dept, rank() over(partition by emp_code order by crt_dt desc) as ranking from dwh_ehs.ehf_enrollment_dm )
 				where ranking=1 
 ) en
-inner join (select aadhar_id ,ehf_card_no, enroll_id , enroll_sno , blood_group, enroll_name ,enroll_gender ,enroll_status , enroll_prnt_id ,enroll_dob, enroll_relation as enroll_relation_code,crt_dt as enrolled_date from rawdata_ehs.ehf_enrollment_family) eef on eef.enroll_prnt_id = en.enroll_prnt_id
+left join (select aadhar_id ,ehf_card_no, enroll_id , enroll_sno , blood_group, enroll_name ,enroll_gender ,enroll_status , enroll_prnt_id ,enroll_dob, enroll_relation as enroll_relation_code,crt_dt, lst_upd_dt from rawdata_ehs.ehf_enrollment_family) eef on eef.enroll_prnt_id = en.enroll_prnt_id
 --where eef.enroll_prnt_id is null order by en.crt_dt desc
 left join (select cmb_dtl_id , cmb_dtl_name  from dwh_ehs.asrim_combo_ehs) ace on ace.cmb_dtl_id = eef.enroll_status
 LEFT JOIN(SELECT cmb_dtl_id,cmb_dtl_name FROM dwh_ehs.ehfm_cmb_dtls_cd) cmb ON cmb.cmb_dtl_id = en.emp_type
+LEFT JOIN(SELECT cmb_dtl_id,cmb_dtl_name as emp_marital_status FROM dwh_ehs.ehfm_cmb_dtls_cd) cmb1 ON cmb1.cmb_dtl_id = en.emp_marital_stat
 left join (select relation_id, relation_name from dwh_ehs.ehfm_relation_mst_dm) rl on rl.relation_id = eef.enroll_relation_code
 left join ( select distinct  dsgn_id, dept_designation,hod  from 
 			(select *, rank() over(partition by dsgn_id order by crt_dt desc) as ranking from dwh_ehs.ehf_designation_mst_dm )
@@ -1430,22 +1483,46 @@ left join ( select distinct  dsgn_id, dept_designation,hod  from
 left join (select loc_id,loc_name as emp_ddo_district, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) ddo_d on ddo_d.loc_id = en.post_dist
 left join (select loc_id,loc_name as emp_district, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) en_d on en_d.loc_id = en.emp_hdist
 left join (select loc_id,loc_name as emp_state, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) en_s on en_s.loc_id = en_d.loc_parnt_id
-left join (select loc_id,loc_name as emp_municipality, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) en_m on en_m.loc_id = en.emp_hmand_munci ;
+left join (select loc_id,loc_name as emp_office_district, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) eno_d on eno_d.loc_id = en.emp_odist
+left join (select loc_id,loc_name as emp_office_state, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) eno_s on eno_s.loc_id = eno_d.loc_parnt_id
+left join (select loc_id,loc_name as emp_municipality, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) en_m on en_m.loc_id = en.emp_hmand_munci
+left join (select loc_id,loc_name as emp_office_municipality, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) eno_m on eno_m.loc_id = en.emp_omand_munci
+;
 
 
 
 
 
-create materialized view dwh_ehs.ehs_jrnlst_enroll_details_mv as 
-select 
-journal_enroll_id,journal_enroll_prnt_id as household_enroll_id,  aadhar_id,journal_card_no,journal_enroll_sno,case when NVL(jf.journal_enroll_sno::text, jf.enroll_relation_code )=0 then 0 when NVL(jf.journal_enroll_sno::text, jf.enroll_relation_code ) is null then null  else 1 end as is_dependent, name, case when gender='M' then 'Male' when gender='F' then 'Female' else '' end as gender ,enroll_status as enroll_status_code , cmb_dtl_name as enroll_status, enroll_relation_code, relation_name as relation_name, DATE(enrolled_date) as enrolled_date,
-case when jf.enroll_status ='CD6105' then 1 else 0 end as is_card_generated, CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
+drop materialized view dwh_ehs.ehs_jrnlst_enroll_details_mv;
+
+
+create  materialized view dwh_ehs.ehs_jrnlst_enroll_details_mv as 
+select  
+journal_enroll_id, journal_enroll_name, eje.journal_enroll_prnt_id as jrnl_household_id, aadhaar_id, journal_enroll_sno, dob  as date_of_birth, home_houseno as journalist_house_no, home_streetname as journalist_house_street, home_email as journalist_email, home_mobile_no, ofc_houseno,ofc_streetname, ofc_email,  ofc_mobile_no, marital_status, null as blood_group, journal_card_no, 
+case when ejf.gender='M' then 'Male' when ejf.gender='F' then 'Female' else '' end as gender,enroll_status_code,enroll_status, jrnl_relation_code, enroll_relation, journal_code, null as journalist_department, jrnlst_designation, null as ddo_dist_code, null as jrnl_ddo_dist,
+home_muncipality as jrnl_municipality_code,jrnl_municipality, eje.home_district as jrnl_dist_code, jrnl_district,en_d.loc_parnt_id as jrnl_state_code, jrnl_state, 
+eje.ofc_muncipality as office_municipality_code,jrnl_office_municipality, eje.ofc_district as jrnl_office_dist_code, jrnl_office_district, eno_d.loc_parnt_id as jrnl_office_state_code, jrnl_office_state, 
+null as jrnl_type_code, jrnl_type, 
+case when NVL(ejf.journal_enroll_sno::text, ejf.jrnl_relation_code )=0 then 0 when NVL(ejf.journal_enroll_sno::text, ejf.jrnl_relation_code) is null then null  else 1 end as is_dependent,
+case when ejf.enroll_status_code ='CD6105' then 1 else 0 end as is_card_generated,case when ejf.enroll_status_code ='CD6105' then NVL(ejf.lst_upd_dt, ejf.crt_dt)::TIMESTAMP else null end as card_generated_date ,eje.enrolled_date,  CURRENT_TIMESTAMP::TIMESTAMP as last_refreshed_dt
 from 
-(select aadhar_id,journal_card_no,journal_enroll_id,journal_enroll_sno, name, gender ,enroll_status, journal_enroll_prnt_id,dob::timestamp, relation as enroll_relation_code, crt_dt::timestamp as enrolled_date from dwh_ehs.ehf_jrnlst_family_dm) jf 
-left join (select cmb_dtl_id , cmb_dtl_name  from dwh_ehs.ehfm_cmb_dtls_cd ) ace on ace.cmb_dtl_id = jf.enroll_status
-left join (select relation_id, relation_name from dwh_ehs.ehfm_relation_mst_dm) rl on rl.relation_id = jf.enroll_relation_code;
+(select journal_code , journal_enroll_prnt_id , journal_marital_stat ,null as jrnl_serv_dsgn ,designation,null as caste, null as dept_hod,null as ddo_dist , home_houseno , home_streetname , home_district , home_muncipality , home_village ,home_email , home_mobile_no , ofc_houseno , ofc_streetname , ofc_district , ofc_state , ofc_muncipality ,  ofc_village , ofc_email , ofc_mobile_no , 'Journalist' as jrnl_type,aadhaar_id, crt_dt as enrolled_date from dwh_ehs.ehf_jrnlst_enrollment_dm) eje
+left join (select aadhar_id , journal_card_no , journal_enroll_id , journal_enroll_sno , "name" as journal_enroll_name , gender , enroll_status as enroll_status_code ,journal_enroll_prnt_id , relation as jrnl_relation_code,dob, crt_dt, lst_upd_dt from dwh_ehs.ehf_jrnlst_family_dm) ejf  on ejf.journal_enroll_prnt_id=eje.journal_enroll_prnt_id
+LEFT JOIN(SELECT cmb_dtl_id,cmb_dtl_name as marital_status FROM dwh_ehs.ehfm_cmb_dtls_cd) cmb1 ON cmb1.cmb_dtl_id = eje.journal_marital_stat
+left join (select cmb_dtl_id , cmb_dtl_name as enroll_status  from dwh_ehs.ehfm_cmb_dtls_cd ) ace on ace.cmb_dtl_id = ejf.enroll_status_code
+left join (select relation_id, relation_name as enroll_relation from dwh_ehs.ehfm_relation_mst_dm) rl on rl.relation_id = ejf.jrnl_relation_code
+left join (select loc_id,loc_name as jrnl_municipality, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) en_m on en_m.loc_id = eje.home_muncipality
+left join (select loc_id,loc_name as jrnl_district, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) en_d on en_d.loc_id = eje.home_district
+left join (select loc_id,loc_name as jrnl_state, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) en_s on en_s.loc_id = en_d.loc_parnt_id
+left join (select loc_id,loc_name as jrnl_office_municipality, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) eno_m on eno_m.loc_id = eje.ofc_muncipality
+left join (select loc_id,loc_name as jrnl_office_district, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) eno_d on eno_d.loc_id = eje.ofc_district
+left join (select loc_id,loc_name as jrnl_office_state, loc_parnt_id from dwh_ehs.ehfm_locations_dm ) eno_s on eno_s.loc_id = eno_d.loc_parnt_id
+left join (select dsgn_id , dsgn_name as jrnlst_designation from dwh_ehs.ehfm_designation_dm ) edm on edm.dsgn_id = eje.designation;
+
+
 
 		  
+drop materialized view dwh_ehs.wt_case_preauth_claim_details_mv;
 		  
 
 create materialized view dwh_ehs.wt_case_preauth_claim_details_mv as
@@ -1702,55 +1779,3 @@ LEFT JOIN (SELECT distinct case_id,asri_cat_code,icd_proc_code, crt_dt  as thera
 LEFT JOIN (SELECT  asri_code, icd_proc_code, proc_name,icd_amt,common_cat_amt,hosp_stay_amt, medical_surg,active_yn,crt_dt, lst_upd_dt  FROM dwh_ehs.ehfm_main_therapy_dm where state='CD201' ) emt ON emt.asri_code = ect.asri_cat_code AND emt.icd_proc_code = ect.icd_proc_code 
 LEFT JOIN (SELECT distinct dis_main_id,dis_main_name,dis_active_yn,crt_dt, lst_upd_dt FROM dwh_ehs.ehfm_specialities_dm) esp ON esp.dis_main_id = emt.asri_code
 );
-
-
-
-
-
-
-
-
-
-
-		  
-
-          
-
-
-
-
-
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-
-
-
-
-
-
-
-
-
-
-
